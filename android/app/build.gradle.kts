@@ -57,7 +57,7 @@ dependencies {
     implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
     implementation("com.squareup.moshi:moshi-adapters:1.15.1")
 
-    implementation("com.microsoft.identity.client:msal:5.5.0")
+    implementation("com.microsoft.identity.client:msal:4.6.1")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
