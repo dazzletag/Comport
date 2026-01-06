@@ -14,10 +14,11 @@ param(
 
 az group create --name $ResourceGroupName --location $Location | Out-Null
 
-az deployment sub create `
-  --location $Location `
+az deployment group create `
+  --resource-group $ResourceGroupName `
   --template-file .\infra\main.bicep `
   --parameters resourceGroupName=$ResourceGroupName `
+               location=$Location `
                sqlAdminLogin=$SqlAdminLogin `
                sqlAdminPassword=$SqlAdminPassword `
                apiAppName=$ApiAppName `

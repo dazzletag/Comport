@@ -1,5 +1,7 @@
+targetScope = 'resourceGroup'
+
 param location string = resourceGroup().location
-param resourceGroupName string
+param resourceGroupName string = resourceGroup().name
 param sqlAdminLogin string
 @secure()
 param sqlAdminPassword string
@@ -14,16 +16,10 @@ param sqlServerName string
 param sqlDbName string = 'competencypassport'
 param evidenceContainerName string = 'evidence'
 
-// Resource group
-resource rg 'Microsoft.Resources/resourceGroups@2022-09-01' = {
-  name: resourceGroupName
-  location: location
-}
-
 // App Service plan
 resource appPlan 'Microsoft.Web/serverfarms@2022-03-01' = {
   name: '${resourceGroupName}-plan'
-  location: rg.location
+  location: location
   sku: {
     name: appServicePlanSku
   }
@@ -35,7 +31,7 @@ resource appPlan 'Microsoft.Web/serverfarms@2022-03-01' = {
 // App Insights
 resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   name: appInsightsName
-  location: rg.location
+  location: location
   kind: 'web'
   properties: {
     Application_Type: 'web'
@@ -45,7 +41,7 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
 // Storage account
 resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
-  location: rg.location
+  location: location
   sku: {
     name: 'Standard_LRS'
   }
@@ -68,7 +64,7 @@ resource evidenceContainer 'Microsoft.Storage/storageAccounts/blobServices/conta
 // SQL server + DB
 resource sqlServer 'Microsoft.Sql/servers@2022-05-01-preview' = {
   name: sqlServerName
-  location: rg.location
+  location: location
   properties: {
     administratorLogin: sqlAdminLogin
     administratorLoginPassword: sqlAdminPassword
@@ -81,7 +77,7 @@ resource sqlServer 'Microsoft.Sql/servers@2022-05-01-preview' = {
 resource sqlDb 'Microsoft.Sql/servers/databases@2022-05-01-preview' = {
   parent: sqlServer
   name: sqlDbName
-  location: rg.location
+  location: location
   sku: {
     name: 'S0'
     tier: 'Standard'
@@ -112,7 +108,7 @@ resource sqlAadAdmin 'Microsoft.Sql/servers/administrators@2022-05-01-preview' =
 // API Web App
 resource apiApp 'Microsoft.Web/sites@2022-03-01' = {
   name: apiAppName
-  location: rg.location
+  location: location
   identity: {
     type: 'SystemAssigned'
   }
@@ -120,7 +116,7 @@ resource apiApp 'Microsoft.Web/sites@2022-03-01' = {
     serverFarmId: appPlan.id
     httpsOnly: true
     siteConfig: {
-      linuxFxVersion: 'DOTNETCORE|8.0'
+      windowsFxVersion: 'DOTNET|8.0'
       appSettings: [
         {
           name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
@@ -154,7 +150,7 @@ resource apiApp 'Microsoft.Web/sites@2022-03-01' = {
 // Share Viewer Web App
 resource shareApp 'Microsoft.Web/sites@2022-03-01' = {
   name: shareAppName
-  location: rg.location
+  location: location
   properties: {
     serverFarmId: appPlan.id
     httpsOnly: true
@@ -163,7 +159,7 @@ resource shareApp 'Microsoft.Web/sites@2022-03-01' = {
 
 // Role assignment for API -> Storage Blob Data Contributor
 resource storageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storage.id, apiApp.identity.principalId, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  name: guid(storage.id, apiApp.name, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
   scope: storage
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
