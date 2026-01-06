@@ -14,8 +14,8 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
-        buildConfigField("String", "API_BASE_URL", "\"https://YOUR_API_URL\"")
-        buildConfigField("String", "API_SCOPE", "\"api://YOUR_API_APP_ID/access_as_user\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://competencypassport-api.azurewebsites.net\"")
+        buildConfigField("String", "API_SCOPE", "\"api://6d119c88-41f6-4912-b7e7-21a1dbc2a6dd/access_as_user\"")
     }
 
     buildTypes {
