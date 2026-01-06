@@ -11,6 +11,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven("https://pkgs.dev.azure.com/microsoft/_packaging/msal-android/maven/v1")
     }
 }
 
