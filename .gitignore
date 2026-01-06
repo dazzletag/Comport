@@ -1,0 +1,12 @@
+# .NET
+bin/
+obj/
+
+# Android
+.gradle/
+local.properties
+**/build/
+
+# OS
+.DS_Store
+Thumbs.db

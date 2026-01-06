@@ -1,0 +1,147 @@
+:root {
+  --ink: #10211b;
+  --muted: #5e6a63;
+  --bg: #f6f4ef;
+  --card: #ffffff;
+  --accent: #0f6a53;
+  --accent-soft: #d4efe6;
+  --warning: #c2790b;
+  --danger: #b13a2a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Plus Jakarta Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: var(--ink);
+  background: radial-gradient(circle at top, #fff7e6 0%, var(--bg) 45%, #eef6f2 100%);
+  min-height: 100vh;
+}
+
+.page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+}
+
+.hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  background: var(--card);
+  padding: 24px 28px;
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(16, 33, 27, 0.08);
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+
+.hero h1 {
+  margin: 0 0 8px;
+  font-size: 36px;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--muted);
+}
+
+.status {
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.content {
+  margin-top: 28px;
+}
+
+.list {
+  display: grid;
+  gap: 18px;
+}
+
+.card {
+  background: var(--card);
+  border-radius: 18px;
+  padding: 20px 22px;
+  box-shadow: 0 8px 24px rgba(16, 33, 27, 0.06);
+}
+
+.card h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.card p {
+  margin: 0 0 12px;
+  color: var(--muted);
+}
+
+.meta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.chip.expiring {
+  background: #fdeacc;
+  color: var(--warning);
+}
+
+.chip.expired {
+  background: #f7d9d5;
+  color: var(--danger);
+}
+
+.evidence {
+  margin-top: 14px;
+  padding-left: 16px;
+  color: var(--muted);
+}
+
+.evidence a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.error {
+  margin-top: 20px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #ffe9e5;
+  color: var(--danger);
+}
+
+.hidden {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
