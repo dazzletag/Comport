@@ -6,7 +6,7 @@
       "type": "AAD",
       "audience": {
         "type": "AzureADMyOrg",
-        "tenant_id": "YOUR_TENANT_ID"
+        "tenant_id": "44a1be07-ba53-4b40-8c4b-8a48ce5f1b0e"
       }
     }
   ]
