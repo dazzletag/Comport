@@ -13,10 +13,12 @@ import android.os.Bundle
 import android.provider.OpenableColumns
 import android.util.Log
 import android.widget.Toast
+import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -71,6 +73,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -90,6 +93,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -604,6 +608,14 @@ fun CompetencyDetailScreen(
             onUpload(uri, note)
         }
     }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(RequestPermission()) { granted ->
+        val uri = cameraUriState.value
+        if (granted && uri != null) {
+            cameraLauncher.launch(uri)
+        } else if (!granted) {
+            Toast.makeText(context, "Camera permission is required.", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -673,7 +685,12 @@ fun CompetencyDetailScreen(
                         onClick = {
                             val uri = createImageUri(context)
                             cameraUriState.value = uri
-                            cameraLauncher.launch(uri)
+                            val granted = ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                            if (granted) {
+                                cameraLauncher.launch(uri)
+                            } else {
+                                cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                            }
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -747,6 +764,14 @@ fun CompetencyEditScreen(
             evidenceNote = ""
         }
     }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(RequestPermission()) { granted ->
+        val uri = cameraUriState.value
+        if (granted && uri != null) {
+            cameraLauncher.launch(uri)
+        } else if (!granted) {
+            Toast.makeText(context, "Camera permission is required.", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -810,7 +835,12 @@ fun CompetencyEditScreen(
                             onClick = {
                                 val uri = createImageUri(context)
                                 cameraUriState.value = uri
-                                cameraLauncher.launch(uri)
+                                val granted = ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                                if (granted) {
+                                    cameraLauncher.launch(uri)
+                                } else {
+                                    cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                                }
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
