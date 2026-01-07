@@ -375,6 +375,15 @@ fun CompetencyPassportApp() {
                                                             }
                                                             passportScreen = PassportScreen.Detail
                                                         } catch (ex: HttpException) {
+                                                            if (ex.code() == 401) {
+                                                                tokenStore.clear()
+                                                                screen = AppScreen.Login
+                                                                val message = "Session expired. Please sign in again."
+                                                                errorMessage = message
+                                                                Log.e("CompetencySave", message, ex)
+                                                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                                                return@launch
+                                                            }
                                                             val detail = ex.response()?.errorBody()?.string()?.takeIf { it.isNotBlank() }
                                                             val message = detail ?: "Failed to save competency."
                                                             errorMessage = message
@@ -1217,6 +1226,11 @@ class TokenStore(context: Context) {
     fun save(token: String) {
         accessToken = token
         prefs.edit().putString("access_token", token).apply()
+    }
+
+    fun clear() {
+        accessToken = null
+        prefs.edit().remove("access_token").apply()
     }
 }
 
