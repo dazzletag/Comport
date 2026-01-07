@@ -351,9 +351,11 @@ fun CompetencyPassportApp() {
                                         PassportScreen.Edit -> {
                                             CompetencyEditScreen(
                                                 initial = selectedCompetency,
+                                                errorMessage = errorMessage,
                                                 onCancel = { passportScreen = PassportScreen.List },
                                                 onSave = { title, description, achieved, expiry, category ->
                                                     scope.launch {
+                                                        errorMessage = null
                                                         try {
                                                             val request = CompetencyUpsertRequest(
                                                                 title,
@@ -363,14 +365,15 @@ fun CompetencyPassportApp() {
                                                                 category
                                                             )
                                                             if (selectedCompetency == null) {
-                                                                api.createCompetency(request)
+                                                                selectedCompetency = api.createCompetency(request)
                                                             } else {
                                                                 api.updateCompetency(selectedCompetency!!.id, request)
+                                                                selectedCompetency = api.getCompetency(selectedCompetency!!.id)
                                                             }
-                                                            passportScreen = PassportScreen.List
-                                                            loadCompetencies()
+                                                            passportScreen = PassportScreen.Detail
                                                         } catch (ex: Exception) {
                                                             errorMessage = "Failed to save competency."
+                                                            Toast.makeText(context, errorMessage, Toast.LENGTH_SHORT).show()
                                                         }
                                                     }
                                                 }
@@ -667,6 +670,7 @@ fun CompetencyDetailScreen(
 @Composable
 fun CompetencyEditScreen(
     initial: CompetencyDetail?,
+    errorMessage: String?,
     onCancel: () -> Unit,
     onSave: (String, String?, Date, Date, String) -> Unit
 ) {
@@ -698,6 +702,10 @@ fun CompetencyEditScreen(
                     onDateSelected = { expiryDate = it }
                 )
                 CategorySelector(selected = category, onSelect = { category = it })
+                if (!errorMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(errorMessage, color = MaterialTheme.colorScheme.error)
+                }
                 if (!error.isNullOrBlank()) {
                     Text(error!!, color = MaterialTheme.colorScheme.error)
                 }
@@ -705,6 +713,10 @@ fun CompetencyEditScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedButton(onClick = onCancel) { Text("Cancel") }
                     Button(onClick = {
+                        if (title.isBlank()) {
+                            error = "Title is required."
+                            return@Button
+                        }
                         val achievedLocal = achievedDate
                         val expiryLocal = expiryDate
                         if (achievedLocal == null || expiryLocal == null) {
