@@ -1,6 +1,6 @@
 {
   "client_id": "2794c21e-6efd-4fe1-b05d-b40559a10871",
-  "redirect_uri": "msauth://com.competencypassport/6DPujDVvBvYHALyRCENz894GoKY=",
+  "redirect_uri": "msauth://com.competencypassport/6DPujDVvBvYHALyRCENz894GoKY%3D",
   "authorities": [
     {
       "type": "AAD",
