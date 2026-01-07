@@ -915,8 +915,9 @@ fun SharePackScreen(
     var includeNmcPin by remember { mutableStateOf(false) }
     val selections = remember { mutableStateMapOf<String, Boolean>() }
     val context = LocalContext.current
+    val scrollState = rememberScrollState()
 
-    Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp).verticalScroll(scrollState)) {
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -958,8 +959,8 @@ fun SharePackScreen(
 
         Text("Selected competencies", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(competencies) { competency ->
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            competencies.forEach { competency ->
                 val checked = selections[competency.id] ?: false
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
