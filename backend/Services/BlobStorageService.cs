@@ -53,4 +53,10 @@ public sealed class BlobStorageService
         var response = await client.DownloadStreamingAsync(cancellationToken: cancellationToken);
         return response.Value.Content;
     }
+
+    public async Task DeleteAsync(string blobName, CancellationToken cancellationToken)
+    {
+        var client = _container.GetBlobClient(blobName);
+        await client.DeleteIfExistsAsync(DeleteSnapshotsOption.IncludeSnapshots, cancellationToken: cancellationToken);
+    }
 }

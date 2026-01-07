@@ -422,6 +422,33 @@ app.MapGet("/competencies/{id:guid}/evidence/{evidenceId:guid}/download", async 
     return Results.File(stream, evidence.ContentType ?? "application/octet-stream", evidence.FileName);
 }).RequireAuthorization();
 
+app.MapDelete("/competencies/{id:guid}/evidence/{evidenceId:guid}", async (AppDbContext db, BlobStorageService storage, ClaimsPrincipal user, Guid id, Guid evidenceId, CancellationToken cancellationToken) =>
+{
+    var userId = GetUserId(user);
+    var competency = await db.Competencies
+        .AsNoTracking()
+        .FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId, cancellationToken);
+
+    if (competency is null)
+    {
+        return Results.NotFound();
+    }
+
+    var evidence = await db.Evidence
+        .FirstOrDefaultAsync(e => e.Id == evidenceId && e.CompetencyId == id, cancellationToken);
+
+    if (evidence is null)
+    {
+        return Results.NotFound();
+    }
+
+    await storage.DeleteAsync(evidence.BlobName, cancellationToken);
+    db.Evidence.Remove(evidence);
+    await db.SaveChangesAsync(cancellationToken);
+
+    return Results.NoContent();
+}).RequireAuthorization();
+
 app.MapPost("/sharepacks", async (AppDbContext db, ClaimsPrincipal user, SharePackCreateRequest request, HttpContext httpContext) =>
 {
     if (request.CompetencyIds.Count == 0)

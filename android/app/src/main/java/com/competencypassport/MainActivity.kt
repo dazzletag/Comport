@@ -42,6 +42,7 @@ import androidx.compose.material.icons.outlined.Assignment
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.EventAvailable
 import androidx.compose.material.icons.outlined.EventBusy
@@ -129,6 +130,7 @@ import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.HttpException
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Multipart
 import retrofit2.http.POST
@@ -365,6 +367,17 @@ fun CompetencyPassportApp() {
                                                                 isUploading = false
                                                             }
                                                         }
+                                                    },
+                                                    onDeleteEvidence = { evidenceId ->
+                                                        scope.launch {
+                                                            try {
+                                                                api.deleteEvidence(detail.id, evidenceId)
+                                                                selectedCompetency = api.getCompetency(detail.id)
+                                                            } catch (ex: Exception) {
+                                                                errorMessage = "Failed to delete evidence."
+                                                                Toast.makeText(context, errorMessage, Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        }
                                                     }
                                                 )
                                             }
@@ -596,7 +609,8 @@ fun CompetencyDetailScreen(
     accessToken: String?,
     isUploading: Boolean,
     onEdit: () -> Unit,
-    onUpload: (Uri, String?) -> Unit
+    onUpload: (Uri, String?) -> Unit,
+    onDeleteEvidence: (String) -> Unit
 ) {
     val context = LocalContext.current
     var note by remember { mutableStateOf("") }
@@ -731,7 +745,7 @@ fun CompetencyDetailScreen(
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(competency.evidence) { evidence ->
-                    EvidenceCard(competency.id, evidence, accessToken)
+                    EvidenceCard(competency.id, evidence, accessToken, onDeleteEvidence)
                 }
             }
         }
@@ -867,10 +881,30 @@ fun CompetencyEditScreen(
                         if (pendingEvidence.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(8.dp))
                             pendingEvidence.forEachIndexed { index, item ->
+                                val isImage = isImageUri(context, item.uri)
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    if (isImage) {
+                                        AsyncImage(
+                                            model = ImageRequest.Builder(context).data(item.uri).crossfade(true).build(),
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Outlined.Description, contentDescription = null)
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         getDisplayName(context, item.uri) ?: "Evidence file",
                                         modifier = Modifier.weight(1f),
@@ -985,6 +1019,27 @@ fun SharePackScreen(
             }
         }
 
+        if (!shareLink.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Share link ready", style = MaterialTheme.typography.titleSmall)
+                    Text(shareLink, style = MaterialTheme.typography.bodySmall)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Share link", shareLink))
+                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Text("Copy link")
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
 
         Text("Selected competencies", style = MaterialTheme.typography.titleMedium)
@@ -1005,27 +1060,6 @@ fun SharePackScreen(
                             Text(competency.title, fontWeight = FontWeight.Medium)
                             Text(competency.category, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                    }
-                }
-            }
-        }
-
-        if (!shareLink.isNullOrBlank()) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Share link ready", style = MaterialTheme.typography.titleSmall)
-                    Text(shareLink, style = MaterialTheme.typography.bodySmall)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Share link", shareLink))
-                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                    }) {
-                        Text("Copy link")
                     }
                 }
             }
@@ -1282,7 +1316,7 @@ fun ReferenceScreen() {
 }
 
 @Composable
-fun EvidenceCard(competencyId: String, evidence: Evidence, accessToken: String?) {
+fun EvidenceCard(competencyId: String, evidence: Evidence, accessToken: String?, onDeleteEvidence: (String) -> Unit) {
     val context = LocalContext.current
     val isImage = evidence.contentType?.startsWith("image/") == true
     val downloadUrl = "${BuildConfig.API_BASE_URL.trimEnd('/')}/competencies/$competencyId/evidence/${evidence.id}/download"
@@ -1323,6 +1357,9 @@ fun EvidenceCard(competencyId: String, evidence: Evidence, accessToken: String?)
                 if (!evidence.note.isNullOrBlank()) {
                     Text(evidence.note!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+            IconButton(onClick = { onDeleteEvidence(evidence.id) }) {
+                Icon(Icons.Outlined.Delete, contentDescription = "Delete")
             }
         }
     }
@@ -1613,6 +1650,9 @@ interface ApiService {
         @Part("note") note: RequestBody?
     ): Evidence
 
+    @DELETE("competencies/{id}/evidence/{evidenceId}")
+    suspend fun deleteEvidence(@Path("id") id: String, @Path("evidenceId") evidenceId: String)
+
     @POST("sharepacks")
     suspend fun createSharePack(@Body request: SharePackCreateRequest): SharePackResponse
 
@@ -1733,6 +1773,11 @@ fun getDisplayName(context: Context, uri: Uri): String? {
         }
     }
     return uri.lastPathSegment
+}
+
+fun isImageUri(context: Context, uri: Uri): Boolean {
+    val type = context.contentResolver.getType(uri)
+    return type?.startsWith("image/") == true
 }
 
 @Composable
