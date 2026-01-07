@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,6 +39,7 @@ import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Assignment
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.EventAvailable
 import androidx.compose.material.icons.outlined.EventBusy
@@ -71,6 +74,7 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -366,7 +370,7 @@ fun CompetencyPassportApp() {
                                                 initial = selectedCompetency,
                                                 errorMessage = errorMessage,
                                                 onCancel = { passportScreen = PassportScreen.List },
-                                                onSave = { title, description, achieved, expiry, category ->
+                                                onSave = { title, description, achieved, expiry, category, pendingEvidence ->
                                                     scope.launch {
                                                         errorMessage = null
                                                         try {
@@ -391,6 +395,17 @@ fun CompetencyPassportApp() {
                                                             } else {
                                                                 api.updateCompetency(selectedCompetency!!.id, request)
                                                                 selectedCompetency = api.getCompetency(selectedCompetency!!.id)
+                                                            }
+                                                            val saved = selectedCompetency
+                                                            if (saved != null && pendingEvidence.isNotEmpty()) {
+                                                                pendingEvidence.forEach { pending ->
+                                                                    val filePart = createMultipartFromUri(context, pending.uri)
+                                                                    val notePart = pending.note?.trim()
+                                                                        ?.takeIf { it.isNotBlank() }
+                                                                        ?.toRequestBody("text/plain".toMediaTypeOrNull())
+                                                                    api.uploadEvidence(saved.id, filePart, notePart)
+                                                                }
+                                                                selectedCompetency = api.getCompetency(saved.id)
                                                             }
                                                             passportScreen = PassportScreen.Detail
                                                         } catch (ex: HttpException) {
@@ -711,7 +726,7 @@ fun CompetencyEditScreen(
     initial: CompetencyDetail?,
     errorMessage: String?,
     onCancel: () -> Unit,
-    onSave: (String, String?, Date, Date, String) -> Unit
+    onSave: (String, String?, Date, Date, String, List<PendingEvidence>) -> Unit
 ) {
     var title by remember { mutableStateOf(initial?.title ?: "") }
     var description by remember { mutableStateOf(initial?.description ?: "") }
@@ -719,8 +734,35 @@ fun CompetencyEditScreen(
     var expiryDate by remember { mutableStateOf(parseLocalDate(initial?.expiresAt)) }
     var category by remember { mutableStateOf(initial?.category ?: "Mandatory") }
     var error by remember { mutableStateOf<String?>(null) }
+    var evidenceNote by remember { mutableStateOf("") }
+    val pendingEvidence = remember { mutableStateListOf<PendingEvidence>() }
+    val context = LocalContext.current
+    val scrollState = rememberScrollState()
 
-    Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
+    val cameraUriState = remember { mutableStateOf<Uri?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val uri = cameraUriState.value
+        if (success && uri != null) {
+            pendingEvidence.add(PendingEvidence(uri, evidenceNote.ifBlank { null }))
+            evidenceNote = ""
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            pendingEvidence.add(PendingEvidence(uri, evidenceNote.ifBlank { null }))
+            evidenceNote = ""
+        }
+    }
+
+    val docLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            pendingEvidence.add(PendingEvidence(uri, evidenceNote.ifBlank { null }))
+            evidenceNote = ""
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp).verticalScroll(scrollState)) {
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -749,6 +791,75 @@ fun CompetencyEditScreen(
                     Text(error!!, color = MaterialTheme.colorScheme.error)
                 }
                 Spacer(modifier = Modifier.height(12.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("Evidence (optional)", style = MaterialTheme.typography.titleSmall)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = evidenceNote,
+                            onValueChange = { evidenceNote = it },
+                            label = { Text("Evidence note") },
+                            placeholder = { Text("e.g. Signed by Ward Manager") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = {
+                                val uri = createImageUri(context)
+                                cameraUriState.value = uri
+                                cameraLauncher.launch(uri)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Outlined.CameraAlt, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Capture photo")
+                        }
+                        OutlinedButton(
+                            onClick = { galleryLauncher.launch("image/*") },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Outlined.FolderOpen, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Photo library")
+                        }
+                        OutlinedButton(
+                            onClick = { docLauncher.launch(arrayOf("*/*")) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Outlined.Description, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Upload file")
+                        }
+                        if (pendingEvidence.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            pendingEvidence.forEachIndexed { index, item ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        getDisplayName(context, item.uri) ?: "Evidence file",
+                                        modifier = Modifier.weight(1f),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    IconButton(onClick = { pendingEvidence.removeAt(index) }) {
+                                        Icon(Icons.Outlined.Close, contentDescription = "Remove")
+                                    }
+                                }
+                                item.note?.let { note ->
+                                    Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedButton(onClick = onCancel) { Text("Cancel") }
                     Button(onClick = {
@@ -764,7 +875,7 @@ fun CompetencyEditScreen(
                         }
                         val achieved = Date.from(achievedLocal.atStartOfDay().toInstant(ZoneOffset.UTC))
                         val expiry = Date.from(expiryLocal.atStartOfDay().toInstant(ZoneOffset.UTC))
-                        onSave(title.trim(), description.ifBlank { null }, achieved, expiry, category)
+                        onSave(title.trim(), description.ifBlank { null }, achieved, expiry, category, pendingEvidence.toList())
                     }) { Text("Save") }
                 }
             }
@@ -898,7 +1009,21 @@ fun RegistrationTypeSelector(selected: String, onSelect: (String) -> Unit) {
         Spacer(modifier = Modifier.height(6.dp))
         val options = listOf("RN Adult", "RN Mental Health", "RN Learning Disability", "RN Child")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            options.forEach { option ->
+            options.take(2).forEach { option ->
+                AssistChip(
+                    onClick = { onSelect(option) },
+                    label = { Text(option) },
+                    colors = if (option == selected) {
+                        AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    } else {
+                        AssistChipDefaults.assistChipColors()
+                    }
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            options.drop(2).forEach { option ->
                 AssistChip(
                     onClick = { onSelect(option) },
                     label = { Text(option) },
@@ -977,8 +1102,9 @@ fun ProfileScreen(profile: NurseProfile?, onSave: (NurseProfileUpdateRequest) ->
     var bio by remember(profile) { mutableStateOf(profile?.bio ?: "") }
     val email = profile?.email ?: ""
     var error by remember { mutableStateOf<String?>(null) }
+    val scrollState = rememberScrollState()
 
-    Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp).verticalScroll(scrollState)) {
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -1047,30 +1173,33 @@ fun ProfileScreen(profile: NurseProfile?, onSave: (NurseProfileUpdateRequest) ->
             Spacer(modifier = Modifier.height(8.dp))
         }
 
-        Button(onClick = {
-            val pin = nmcPin.trim()
-            val pinValid = Regex("^[A-Za-z]{2}\\d{6}$").matches(pin)
-            error = when {
-                fullName.isBlank() -> "Full name is required."
-                registrationType.isBlank() -> "Select a registration type."
-                !pinValid -> "NMC PIN must be 2 letters followed by 6 digits."
-                else -> null
-            }
-            if (error == null) {
-                onSave(
-                    NurseProfileUpdateRequest(
-                        fullName.trim(),
-                        preferredName.ifBlank { null },
-                        pin,
-                        registrationType.trim(),
-                        employer.ifBlank { null },
-                        roleBand.ifBlank { null },
-                        phone.ifBlank { null },
-                        bio.ifBlank { null }
+        Button(
+            onClick = {
+                val pin = nmcPin.trim()
+                val pinValid = Regex("^[A-Za-z]{2}\\d{6}$").matches(pin)
+                error = when {
+                    fullName.isBlank() -> "Full name is required."
+                    registrationType.isBlank() -> "Select a registration type."
+                    !pinValid -> "NMC PIN must be 2 letters followed by 6 digits."
+                    else -> null
+                }
+                if (error == null) {
+                    onSave(
+                        NurseProfileUpdateRequest(
+                            fullName.trim(),
+                            preferredName.ifBlank { null },
+                            pin,
+                            registrationType.trim(),
+                            employer.ifBlank { null },
+                            roleBand.ifBlank { null },
+                            phone.ifBlank { null },
+                            bio.ifBlank { null }
+                        )
                     )
-                )
-            }
-        }) {
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Text("Save profile")
         }
     }
@@ -1526,6 +1655,11 @@ data class QuickLink(
     val title: String,
     val description: String,
     val url: String
+)
+
+data class PendingEvidence(
+    val uri: Uri,
+    val note: String?
 )
 
 suspend fun createMultipartFromUri(context: Context, uri: Uri): MultipartBody.Part {
