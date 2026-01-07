@@ -2,16 +2,22 @@ const statusElement = document.getElementById("packStatus");
 const errorElement = document.getElementById("error");
 const contentElement = document.getElementById("content");
 const listElement = document.getElementById("competencyList");
+const profileCard = document.getElementById("profileCard");
 const nurseNameElement = document.getElementById("nurseName");
 const registrationTypeElement = document.getElementById("registrationType");
 const emailAddressElement = document.getElementById("emailAddress");
 const nmcPinElement = document.getElementById("nmcPin");
 const printButton = document.getElementById("printBtn");
 
+function setText(el, value) {
+  if (el) el.textContent = value;
+}
+
 function showError(message) {
   errorElement.textContent = message;
   errorElement.classList.remove("hidden");
   contentElement.classList.add("hidden");
+  profileCard?.classList.add("hidden");
 }
 
 function formatDate(value) {
@@ -43,10 +49,11 @@ function statusLabel(status) {
 
 function renderPack(data, token) {
   statusElement.textContent = `Pack expiry ${formatDate(data.expiresAt)}`;
-  nurseNameElement.textContent = data.nurseName || "Not provided";
-  registrationTypeElement.textContent = data.registrationType || "Not provided";
-  emailAddressElement.textContent = data.email || "Not provided";
-  nmcPinElement.textContent = data.nmcPin || "Not shared";
+  profileCard?.classList.remove("hidden");
+  setText(nurseNameElement, data.nurseName || "Not provided");
+  setText(registrationTypeElement, data.registrationType || "Not provided");
+  setText(emailAddressElement, data.email || "Not provided");
+  setText(nmcPinElement, data.nmcPin || "Not shared");
   listElement.innerHTML = "";
 
   data.competencies.forEach((competency) => {
