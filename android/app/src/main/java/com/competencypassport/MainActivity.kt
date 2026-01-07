@@ -11,6 +11,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -113,6 +114,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
+import retrofit2.HttpException
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Multipart
@@ -371,8 +373,15 @@ fun CompetencyPassportApp() {
                                                                 selectedCompetency = api.getCompetency(selectedCompetency!!.id)
                                                             }
                                                             passportScreen = PassportScreen.Detail
+                                                        } catch (ex: HttpException) {
+                                                            val detail = ex.response()?.errorBody()?.string()?.takeIf { it.isNotBlank() }
+                                                            val message = detail ?: "Failed to save competency."
+                                                            errorMessage = message
+                                                            Log.e("CompetencySave", message, ex)
+                                                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                                                         } catch (ex: Exception) {
                                                             errorMessage = "Failed to save competency."
+                                                            Log.e("CompetencySave", "Unexpected error", ex)
                                                             Toast.makeText(context, errorMessage, Toast.LENGTH_SHORT).show()
                                                         }
                                                     }
