@@ -1,3 +1,4 @@
+
 @file:OptIn(ExperimentalMaterial3Api::class)
 
 package com.competencypassport
@@ -5,26 +6,89 @@ package com.competencypassport
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Assignment
+import androidx.compose.material.icons.outlined.CameraAlt
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.EventBusy
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
-import com.microsoft.identity.client.*
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.microsoft.identity.client.AuthenticationCallback
+import com.microsoft.identity.client.IAuthenticationResult
+import com.microsoft.identity.client.IPublicClientApplication
+import com.microsoft.identity.client.ISingleAccountPublicClientApplication
+import com.microsoft.identity.client.PublicClientApplication
 import com.microsoft.identity.client.exception.MsalClientException
 import com.microsoft.identity.client.exception.MsalException
 import com.squareup.moshi.Moshi
@@ -32,20 +96,32 @@ import com.squareup.moshi.adapters.Rfc3339DateJsonAdapter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.Headers
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
-import retrofit2.http.*
+import retrofit2.http.Body
+import retrofit2.http.GET
+import retrofit2.http.Multipart
+import retrofit2.http.POST
+import retrofit2.http.PUT
+import retrofit2.http.Part
+import retrofit2.http.Path
 import java.io.File
 import java.io.FileOutputStream
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
+import java.time.temporal.ChronoUnit
 import java.util.Date
 
 class MainActivity : ComponentActivity() {
@@ -66,11 +142,15 @@ fun CompetencyPassportApp() {
     val tokenStore = remember { TokenStore(context) }
     val api = remember { ApiClient(tokenStore).service }
 
-    var screen by remember { mutableStateOf(Screen.Login) }
+    var screen by remember { mutableStateOf(AppScreen.Login) }
+    var activeTab by remember { mutableStateOf(MainTab.Passport) }
+    var passportScreen by remember { mutableStateOf(PassportScreen.List) }
     var competencies by remember { mutableStateOf<List<CompetencySummary>>(emptyList()) }
     var selectedCompetency by remember { mutableStateOf<CompetencyDetail?>(null) }
     var shareLink by remember { mutableStateOf<String?>(null) }
+    var profile by remember { mutableStateOf<NurseProfile?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isUploading by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
 
@@ -85,10 +165,22 @@ fun CompetencyPassportApp() {
         }
     }
 
+    fun loadProfile() {
+        scope.launch {
+            errorMessage = null
+            try {
+                profile = api.getProfile()
+            } catch (ex: Exception) {
+                errorMessage = "Failed to load profile."
+            }
+        }
+    }
+
     fun ensureLoggedIn() {
         if (tokenStore.accessToken != null) {
-            screen = Screen.List
+            screen = AppScreen.Home
             loadCompetencies()
+            loadProfile()
         }
     }
 
@@ -96,19 +188,18 @@ fun CompetencyPassportApp() {
         ensureLoggedIn()
     }
 
-    Scaffold(topBar = {
-        TopAppBar(title = { Text("CompetencyPassport") })
-    }) { padding ->
-        Box(modifier = Modifier.padding(padding)) {
+    CompetencyPassportTheme {
+        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             when (screen) {
-                Screen.Login -> {
+                AppScreen.Login -> {
                     LoginScreen(
                         onLogin = {
                             authManager.signIn(activity, object : MsalAuthManager.AuthCallback {
                                 override fun onSuccess(result: IAuthenticationResult) {
                                     tokenStore.save(result.accessToken)
-                                    screen = Screen.List
+                                    screen = AppScreen.Home
                                     loadCompetencies()
+                                    loadProfile()
                                 }
 
                                 override fun onError(error: MsalException) {
@@ -119,101 +210,227 @@ fun CompetencyPassportApp() {
                         errorMessage = errorMessage
                     )
                 }
-                Screen.List -> {
-                    CompetencyListScreen(
-                        competencies = competencies,
-                        errorMessage = errorMessage,
-                        onRefresh = { loadCompetencies() },
-                        onSelect = {
-                            scope.launch {
-                                try {
-                                    selectedCompetency = api.getCompetency(it)
-                                    screen = Screen.Detail
-                                } catch (ex: Exception) {
-                                    errorMessage = "Failed to load competency."
-                                }
-                            }
-                        },
-                        onAdd = {
-                            selectedCompetency = null
-                            screen = Screen.Edit
-                        },
-                        onShare = {
-                            shareLink = null
-                            screen = Screen.Share
+                AppScreen.Home -> {
+                    val topBarTitle = when (activeTab) {
+                        MainTab.Passport -> when (passportScreen) {
+                            PassportScreen.List -> "Competency Passport"
+                            PassportScreen.Detail -> "Competency Record"
+                            PassportScreen.Edit -> "Record Update"
+                            PassportScreen.Share -> "Share Pack"
                         }
-                    )
-                }
-                Screen.Detail -> {
-                    val detail = selectedCompetency
-                    if (detail != null) {
-                        CompetencyDetailScreen(
-                            competency = detail,
-                            onBack = {
-                                screen = Screen.List
-                                loadCompetencies()
-                            },
-                            onUpload = { uri ->
-                                scope.launch {
-                                    try {
-                                        val filePart = createMultipartFromUri(context, uri)
-                                        api.uploadEvidence(detail.id, filePart)
-                                        selectedCompetency = api.getCompetency(detail.id)
-                                    } catch (ex: Exception) {
-                                        errorMessage = "Evidence upload failed."
-                                    }
-                                }
-                            }
-                        )
+                        MainTab.Profile -> "Professional Profile"
+                        MainTab.References -> "Quick References"
                     }
-                }
-                Screen.Edit -> {
-                    CompetencyEditScreen(
-                        initial = selectedCompetency,
-                        onCancel = { screen = Screen.List },
-                        onSave = { title, description, expiry ->
-                            scope.launch {
-                                try {
-                                    if (selectedCompetency == null) {
-                                        api.createCompetency(CompetencyUpsertRequest(title, description, expiry))
-                                    } else {
-                                        api.updateCompetency(selectedCompetency!!.id, CompetencyUpsertRequest(title, description, expiry))
+
+                    Scaffold(
+                        topBar = {
+                            TopAppBar(
+                                title = { Text(topBarTitle) },
+                                navigationIcon = if (activeTab == MainTab.Passport && passportScreen != PassportScreen.List) {
+                                    {
+                                        IconButton(onClick = {
+                                            passportScreen = PassportScreen.List
+                                            loadCompetencies()
+                                        }) {
+                                            Icon(Icons.Outlined.ArrowBack, contentDescription = "Back")
+                                        }
                                     }
-                                    screen = Screen.List
-                                    loadCompetencies()
-                                } catch (ex: Exception) {
-                                    errorMessage = "Failed to save competency."
+                                } else {
+                                    {}
+                                },
+                                actions = {
+                                    if (activeTab == MainTab.Passport && passportScreen == PassportScreen.List) {
+                                        IconButton(onClick = {
+                                            shareLink = null
+                                            passportScreen = PassportScreen.Share
+                                        }) {
+                                            Icon(Icons.Outlined.Share, contentDescription = "Share Pack")
+                                        }
+                                    }
                                 }
-                            }
-                        }
-                    )
-                }
-                Screen.Share -> {
-                    SharePackScreen(
-                        competencies = competencies,
-                        shareLink = shareLink,
-                        onBack = {
-                            screen = Screen.List
+                            )
                         },
-                        onCreate = { expiryDays, selected ->
-                            scope.launch {
-                                try {
-                                    val response = api.createSharePack(SharePackCreateRequest(expiryDays, selected))
-                                    shareLink = response.shareUrl
-                                } catch (ex: Exception) {
-                                    errorMessage = "Failed to create share pack."
+                        bottomBar = {
+                            NavigationBar {
+                                NavigationBarItem(
+                                    selected = activeTab == MainTab.Passport,
+                                    onClick = {
+                                        activeTab = MainTab.Passport
+                                        passportScreen = PassportScreen.List
+                                    },
+                                    icon = { Icon(Icons.Outlined.Assignment, contentDescription = "Passport") },
+                                    label = { Text("Passport") }
+                                )
+                                NavigationBarItem(
+                                    selected = activeTab == MainTab.Profile,
+                                    onClick = {
+                                        activeTab = MainTab.Profile
+                                        loadProfile()
+                                    },
+                                    icon = { Icon(Icons.Outlined.Person, contentDescription = "Profile") },
+                                    label = { Text("Profile") }
+                                )
+                                NavigationBarItem(
+                                    selected = activeTab == MainTab.References,
+                                    onClick = { activeTab = MainTab.References },
+                                    icon = { Icon(Icons.Outlined.Link, contentDescription = "References") },
+                                    label = { Text("References") }
+                                )
+                            }
+                        }
+                    ) { padding ->
+                        Box(
+                            modifier = Modifier
+                                .padding(padding)
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            MaterialTheme.colorScheme.background,
+                                            MaterialTheme.colorScheme.surface
+                                        )
+                                    )
+                                )
+                        ) {
+                            when (activeTab) {
+                                MainTab.Passport -> {
+                                    when (passportScreen) {
+                                        PassportScreen.List -> {
+                                            CompetencyListScreen(
+                                                competencies = competencies,
+                                                errorMessage = errorMessage,
+                                                onRefresh = { loadCompetencies() },
+                                                onSelect = {
+                                                    scope.launch {
+                                                        try {
+                                                            selectedCompetency = api.getCompetency(it)
+                                                            passportScreen = PassportScreen.Detail
+                                                        } catch (ex: Exception) {
+                                                            errorMessage = "Failed to load competency."
+                                                        }
+                                                    }
+                                                },
+                                                onAdd = {
+                                                    selectedCompetency = null
+                                                    passportScreen = PassportScreen.Edit
+                                                }
+                                            )
+                                        }
+                                        PassportScreen.Detail -> {
+                                            val detail = selectedCompetency
+                                            if (detail != null) {
+                                                CompetencyDetailScreen(
+                                                    competency = detail,
+                                                    accessToken = tokenStore.accessToken,
+                                                    isUploading = isUploading,
+                                                    onEdit = { passportScreen = PassportScreen.Edit },
+                                                    onUpload = { uri, note ->
+                                                        scope.launch {
+                                                            isUploading = true
+                                                            try {
+                                                                val filePart = createMultipartFromUri(context, uri)
+                                                                val notePart = note?.trim().takeIf { !it.isNullOrBlank() }
+                                                                    ?.toRequestBody("text/plain".toMediaTypeOrNull())
+                                                                api.uploadEvidence(detail.id, filePart, notePart)
+                                                                selectedCompetency = api.getCompetency(detail.id)
+                                                            } catch (ex: Exception) {
+                                                                errorMessage = "Evidence upload failed."
+                                                            } finally {
+                                                                isUploading = false
+                                                            }
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                        }
+                                        PassportScreen.Edit -> {
+                                            CompetencyEditScreen(
+                                                initial = selectedCompetency,
+                                                onCancel = { passportScreen = PassportScreen.List },
+                                                onSave = { title, description, achieved, expiry, category ->
+                                                    scope.launch {
+                                                        try {
+                                                            val request = CompetencyUpsertRequest(
+                                                                title,
+                                                                description,
+                                                                achieved,
+                                                                expiry,
+                                                                category
+                                                            )
+                                                            if (selectedCompetency == null) {
+                                                                api.createCompetency(request)
+                                                            } else {
+                                                                api.updateCompetency(selectedCompetency!!.id, request)
+                                                            }
+                                                            passportScreen = PassportScreen.List
+                                                            loadCompetencies()
+                                                        } catch (ex: Exception) {
+                                                            errorMessage = "Failed to save competency."
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        }
+                                        PassportScreen.Share -> {
+                                            SharePackScreen(
+                                                competencies = competencies,
+                                                profile = profile,
+                                                shareLink = shareLink,
+                                                onCreate = { expiryDays, selected, includePin ->
+                                                    scope.launch {
+                                                        try {
+                                                            val response = api.createSharePack(
+                                                                SharePackCreateRequest(expiryDays, selected, includePin)
+                                                            )
+                                                            shareLink = response.shareUrl
+                                                        } catch (ex: Exception) {
+                                                            errorMessage = "Failed to create share pack."
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                                MainTab.Profile -> {
+                                    ProfileScreen(
+                                        profile = profile,
+                                        onSave = { update ->
+                                            scope.launch {
+                                                try {
+                                                    profile = api.updateProfile(update)
+                                                    Toast.makeText(context, "Profile updated", Toast.LENGTH_SHORT).show()
+                                                } catch (ex: Exception) {
+                                                    errorMessage = "Failed to save profile."
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                                MainTab.References -> {
+                                    ReferenceScreen()
                                 }
                             }
                         }
-                    )
+                    }
                 }
             }
         }
     }
 }
 
-enum class Screen {
+enum class AppScreen {
     Login,
+    Home
+}
+
+enum class MainTab {
+    Passport,
+    Profile,
+    References
+}
+
+enum class PassportScreen {
     List,
     Detail,
     Edit,
@@ -223,7 +440,7 @@ enum class Screen {
 @Composable
 fun LoginScreen(onLogin: () -> Unit, errorMessage: String?) {
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier.fillMaxSize().padding(28.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -245,30 +462,60 @@ fun CompetencyListScreen(
     errorMessage: String?,
     onRefresh: () -> Unit,
     onSelect: (String) -> Unit,
-    onAdd: () -> Unit,
-    onShare: () -> Unit
+    onAdd: () -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = onAdd) { Text("Add") }
-            OutlinedButton(onClick = onShare) { Text("Share Pack") }
-            OutlinedButton(onClick = onRefresh) { Text("Refresh") }
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Your professional record", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Keep evidence current for appraisal, revalidation, and practice assurance.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = onAdd) { Text("Add competency") }
+                    OutlinedButton(onClick = onRefresh) { Text("Refresh") }
+                }
+            }
         }
         if (!errorMessage.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(12.dp))
             Text(errorMessage, color = MaterialTheme.colorScheme.error)
         }
         Spacer(modifier = Modifier.height(12.dp))
         LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             items(competencies) { competency ->
-                Card(onClick = { onSelect(competency.id) }) {
+                Card(
+                    onClick = { onSelect(competency.id) },
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(competency.title, fontWeight = FontWeight.Bold)
+                        Text(competency.title, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
                         if (!competency.description.isNullOrBlank()) {
-                            Text(competency.description)
+                            Text(
+                                competency.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
+                        Spacer(modifier = Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            AssistChip(onClick = {}, label = { Text(competency.status) })
-                            AssistChip(onClick = {}, label = { Text("Evidence ${competency.evidenceCount}") })
+                            StatusChip(competency.status)
+                            AssistChip(onClick = {}, label = { Text(competency.category) })
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(expiryLabel(competency.expiresAt), style = MaterialTheme.typography.bodySmall)
+                            Text("Evidence ${competency.evidenceCount}", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -280,34 +527,132 @@ fun CompetencyListScreen(
 @Composable
 fun CompetencyDetailScreen(
     competency: CompetencyDetail,
-    onBack: () -> Unit,
-    onUpload: (Uri) -> Unit
+    accessToken: String?,
+    isUploading: Boolean,
+    onEdit: () -> Unit,
+    onUpload: (Uri, String?) -> Unit
 ) {
     val context = LocalContext.current
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            onUpload(uri)
+    var note by remember { mutableStateOf("") }
+
+    val cameraUriState = remember { mutableStateOf<Uri?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val uri = cameraUriState.value
+        if (success && uri != null) {
+            onUpload(uri, note)
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onBack) { Text("Back") }
-            Button(onClick = { picker.launch("*/*") }) { Text("Upload Evidence") }
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            onUpload(uri, note)
         }
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(competency.title, style = MaterialTheme.typography.titleLarge)
-        if (!competency.description.isNullOrBlank()) {
-            Text(competency.description)
+    }
+
+    val docLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            onUpload(uri, note)
         }
-        Text("Status: ${competency.status}")
-        Spacer(modifier = Modifier.height(12.dp))
-        Text("Evidence", style = MaterialTheme.typography.titleMedium)
+    }
+
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(competency.title, style = MaterialTheme.typography.titleLarge)
+                if (!competency.description.isNullOrBlank()) {
+                    Text(
+                        competency.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StatusChip(competency.status)
+                    AssistChip(onClick = {}, label = { Text(competency.category) })
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Achieved ${formatDate(competency.achievedAt)}", style = MaterialTheme.typography.bodySmall)
+                Text(expiryLabel(competency.expiresAt), style = MaterialTheme.typography.bodySmall)
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(onClick = onEdit) { Text("Edit record") }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Evidence capture", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Upload signed evidence or accredited training documentation.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Optional note") },
+                    placeholder = { Text("e.g. Signed by Ward Manager") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(onClick = {
+                        val uri = createImageUri(context)
+                        cameraUriState.value = uri
+                        cameraLauncher.launch(uri)
+                    }) {
+                        Icon(Icons.Outlined.CameraAlt, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Capture photo")
+                    }
+                    OutlinedButton(onClick = { galleryLauncher.launch("image/*") }) {
+                        Icon(Icons.Outlined.FolderOpen, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Photo library")
+                    }
+                    OutlinedButton(onClick = {
+                        docLauncher.launch(
+                            arrayOf(
+                                "application/pdf",
+                                "application/msword",
+                                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            )
+                        )
+                    }) {
+                        Icon(Icons.Outlined.Description, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Upload document")
+                    }
+                }
+                if (isUploading) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text("Evidence record", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(8.dp))
         if (competency.evidence.isEmpty()) {
-            Text("No evidence yet.")
+            Text("No evidence uploaded yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
-            competency.evidence.forEach { evidence ->
-                Text("- ${evidence.fileName}")
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(competency.evidence) { evidence ->
+                    EvidenceCard(competency.id, evidence, accessToken)
+                }
             }
         }
     }
@@ -317,32 +662,68 @@ fun CompetencyDetailScreen(
 fun CompetencyEditScreen(
     initial: CompetencyDetail?,
     onCancel: () -> Unit,
-    onSave: (String, String?, Date) -> Unit
+    onSave: (String, String?, Date, Date, String) -> Unit
 ) {
     var title by remember { mutableStateOf(initial?.title ?: "") }
     var description by remember { mutableStateOf(initial?.description ?: "") }
+    var achievedInput by remember { mutableStateOf(initial?.achievedAt?.substring(0, 10) ?: "") }
     var expiryInput by remember { mutableStateOf(initial?.expiresAt?.substring(0, 10) ?: "") }
+    var category by remember { mutableStateOf(initial?.category ?: "Mandatory") }
     var error by remember { mutableStateOf<String?>(null) }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onCancel) { Text("Cancel") }
-            Button(onClick = {
-                try {
-                    val date = LocalDate.parse(expiryInput)
-                    val expiry = Date.from(date.atStartOfDay().toInstant(ZoneOffset.UTC))
-                    onSave(title, description.ifBlank { null }, expiry)
-                } catch (ex: DateTimeParseException) {
-                    error = "Expiry must be yyyy-MM-dd"
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Competency details", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = achievedInput, onValueChange = { achievedInput = it }, label = { Text("Achieved (yyyy-MM-dd)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = expiryInput, onValueChange = { expiryInput = it }, label = { Text("Expiry (yyyy-MM-dd)") }, modifier = Modifier.fillMaxWidth())
+                CategorySelector(selected = category, onSelect = { category = it })
+                if (!error.isNullOrBlank()) {
+                    Text(error!!, color = MaterialTheme.colorScheme.error)
                 }
-            }) { Text("Save") }
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(onClick = onCancel) { Text("Cancel") }
+                    Button(onClick = {
+                        try {
+                            val achievedDate = LocalDate.parse(achievedInput)
+                            val expiryDate = LocalDate.parse(expiryInput)
+                            val achieved = Date.from(achievedDate.atStartOfDay().toInstant(ZoneOffset.UTC))
+                            val expiry = Date.from(expiryDate.atStartOfDay().toInstant(ZoneOffset.UTC))
+                            onSave(title.trim(), description.ifBlank { null }, achieved, expiry, category)
+                        } catch (ex: DateTimeParseException) {
+                            error = "Dates must be yyyy-MM-dd"
+                        }
+                    }) { Text("Save") }
+                }
+            }
         }
-        Spacer(modifier = Modifier.height(12.dp))
-        OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") })
-        OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") })
-        OutlinedTextField(value = expiryInput, onValueChange = { expiryInput = it }, label = { Text("Expiry (yyyy-MM-dd)") })
-        if (!error.isNullOrBlank()) {
-            Text(error!!, color = MaterialTheme.colorScheme.error)
+    }
+}
+
+@Composable
+fun CategorySelector(selected: String, onSelect: (String) -> Unit) {
+    Column {
+        Text("Category", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("Mandatory", "Clinical", "Specialist").forEach { item ->
+                AssistChip(
+                    onClick = { onSelect(item) },
+                    label = { Text(item) },
+                    colors = if (item == selected) {
+                        AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    } else {
+                        AssistChipDefaults.assistChipColors()
+                    }
+                )
+            }
         }
     }
 }
@@ -350,47 +731,376 @@ fun CompetencyEditScreen(
 @Composable
 fun SharePackScreen(
     competencies: List<CompetencySummary>,
+    profile: NurseProfile?,
     shareLink: String?,
-    onBack: () -> Unit,
-    onCreate: (Int, List<String>) -> Unit
+    onCreate: (Int, List<String>, Boolean) -> Unit
 ) {
     var expiryDays by remember { mutableStateOf("30") }
+    var includeNmcPin by remember { mutableStateOf(false) }
     val selections = remember { mutableStateMapOf<String, Boolean>() }
     val context = LocalContext.current
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onBack) { Text("Back") }
-            Button(onClick = {
-                val days = expiryDays.toIntOrNull() ?: 30
-                val selected = selections.filter { it.value }.keys.toList()
-                onCreate(days, selected)
-            }) { Text("Generate") }
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Share pack", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Read-only pack for employers, mentors, or placement leads.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (profile != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Nurse: ${profile.fullName}", style = MaterialTheme.typography.bodySmall)
+                    if (!profile.registrationType.isNullOrBlank()) {
+                        Text("Registration: ${profile.registrationType}", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(value = expiryDays, onValueChange = { expiryDays = it }, label = { Text("Expiry days") })
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = includeNmcPin, onCheckedChange = { includeNmcPin = it })
+                    Column {
+                        Text("Include NMC PIN (optional)")
+                        Text("Off by default to protect confidential registration details.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(onClick = {
+                    val days = expiryDays.toIntOrNull() ?: 30
+                    val selected = selections.filter { it.value }.keys.toList()
+                    onCreate(days, selected, includeNmcPin)
+                }) { Text("Generate share pack") }
+            }
         }
-        OutlinedTextField(value = expiryDays, onValueChange = { expiryDays = it }, label = { Text("Expiry days") })
-        Spacer(modifier = Modifier.height(12.dp))
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text("Selected competencies", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(8.dp))
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(competencies) { competency ->
                 val checked = selections[competency.id] ?: false
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = checked, onCheckedChange = { selections[competency.id] = it })
-                    Text(competency.title)
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(checked = checked, onCheckedChange = { selections[competency.id] = it })
+                        Column(modifier = Modifier.padding(start = 8.dp)) {
+                            Text(competency.title, fontWeight = FontWeight.Medium)
+                            Text(competency.category, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
             }
         }
+
         if (!shareLink.isNullOrBlank()) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Text("Share link:")
-            Text(shareLink)
-            Button(onClick = {
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("Share link", shareLink))
-                Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-            }) {
-                Text("Copy")
+            Spacer(modifier = Modifier.height(16.dp))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Share link ready", style = MaterialTheme.typography.titleSmall)
+                    Text(shareLink, style = MaterialTheme.typography.bodySmall)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Share link", shareLink))
+                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Text("Copy link")
+                    }
+                }
             }
         }
     }
+}
+
+@Composable
+fun RegistrationTypeSelector(selected: String, onSelect: (String) -> Unit) {
+    Column {
+        Text("Registration type", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(modifier = Modifier.height(6.dp))
+        val options = listOf("RN Adult", "RN Mental Health", "RN Learning Disability", "RN Child")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            options.forEach { option ->
+                AssistChip(
+                    onClick = { onSelect(option) },
+                    label = { Text(option) },
+                    colors = if (option == selected) {
+                        AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    } else {
+                        AssistChipDefaults.assistChipColors()
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ProfileScreen(profile: NurseProfile?, onSave: (NurseProfileUpdateRequest) -> Unit) {
+    var fullName by remember(profile) { mutableStateOf(profile?.fullName ?: "") }
+    var preferredName by remember(profile) { mutableStateOf(profile?.preferredName ?: "") }
+    var nmcPin by remember(profile) { mutableStateOf(profile?.nmcPin ?: "") }
+    var registrationType by remember(profile) { mutableStateOf(profile?.registrationType ?: "") }
+    var employer by remember(profile) { mutableStateOf(profile?.employer ?: "") }
+    var roleBand by remember(profile) { mutableStateOf(profile?.roleBand ?: "") }
+    var phone by remember(profile) { mutableStateOf(profile?.phone ?: "") }
+    var bio by remember(profile) { mutableStateOf(profile?.bio ?: "") }
+    val email = profile?.email ?: ""
+    var error by remember { mutableStateOf<String?>(null) }
+
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Professional identity", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(value = fullName, onValueChange = { fullName = it }, label = { Text("Full name") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = preferredName, onValueChange = { preferredName = it }, label = { Text("Preferred name") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = nmcPin, onValueChange = { nmcPin = it }, label = { Text("NMC PIN (confidential)") }, modifier = Modifier.fillMaxWidth())
+                Text(
+                    "Your NMC PIN is stored securely and only shared if you explicitly include it in a share pack.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                RegistrationTypeSelector(selected = registrationType, onSelect = { registrationType = it })
+                OutlinedTextField(value = employer, onValueChange = { employer = it }, label = { Text("Employer") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = roleBand, onValueChange = { roleBand = it }, label = { Text("Role / Band") }, modifier = Modifier.fillMaxWidth())
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Contact", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = {},
+                    label = { Text("Email (read-only)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = false
+                )
+                OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text("Phone (optional)") }, modifier = Modifier.fillMaxWidth())
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Professional bio", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = bio,
+                    onValueChange = { bio = it },
+                    label = { Text("Short bio (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (!error.isNullOrBlank()) {
+            Text(error!!, color = MaterialTheme.colorScheme.error)
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        Button(onClick = {
+            val pin = nmcPin.trim()
+            val pinValid = Regex("^[A-Za-z]{2}\\d{6}$").matches(pin)
+            error = when {
+                fullName.isBlank() -> "Full name is required."
+                registrationType.isBlank() -> "Select a registration type."
+                !pinValid -> "NMC PIN must be 2 letters followed by 6 digits."
+                else -> null
+            }
+            if (error == null) {
+                onSave(
+                    NurseProfileUpdateRequest(
+                        fullName.trim(),
+                        preferredName.ifBlank { null },
+                        pin,
+                        registrationType.trim(),
+                        employer.ifBlank { null },
+                        roleBand.ifBlank { null },
+                        phone.ifBlank { null },
+                        bio.ifBlank { null }
+                    )
+                )
+            }
+        }) {
+            Text("Save profile")
+        }
+    }
+}
+
+@Composable
+fun ReferenceScreen() {
+    val context = LocalContext.current
+    val links = listOf(
+        QuickLink("NMC Code", "Professional standards of practice and behaviour.", "https://www.nmc.org.uk/standards/code/"),
+        QuickLink("NMC Revalidation", "Guidance for five-year revalidation cycles.", "https://www.nmc.org.uk/revalidation/"),
+        QuickLink("NICE Guidance", "Clinical guidelines and evidence summaries.", "https://www.nice.org.uk/guidance"),
+        QuickLink("NHS England", "National policy updates and operational guidance.", "https://www.england.nhs.uk/"),
+        QuickLink("BNF / Medicines", "Medicines guidance and prescribing information.", "https://bnf.nice.org.uk/"),
+        QuickLink("Local policy", "Placeholder for local trust or care-home policy.", "https://www.nhs.uk")
+    )
+
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
+        Text("Quick references", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(12.dp))
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(links) { link ->
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(link.title, fontWeight = FontWeight.Medium)
+                            Text(link.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        IconButton(onClick = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link.url))
+                            context.startActivity(intent)
+                        }) {
+                            Icon(Icons.Outlined.Link, contentDescription = "Open")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EvidenceCard(competencyId: String, evidence: Evidence, accessToken: String?) {
+    val context = LocalContext.current
+    val isImage = evidence.contentType?.startsWith("image/") == true
+    val downloadUrl = "${BuildConfig.API_BASE_URL.trimEnd('/')}/competencies/$competencyId/evidence/${evidence.id}/download"
+    val headers = if (!accessToken.isNullOrBlank()) {
+        Headers.Builder().add("Authorization", "Bearer $accessToken").build()
+    } else {
+        Headers.Builder().build()
+    }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (isImage) {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(downloadUrl)
+                        .headers(headers)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = null,
+                    modifier = Modifier.size(56.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Outlined.Description, contentDescription = null)
+                }
+            }
+            Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+                Text(evidence.fileName, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(formatDate(evidence.uploadedAt), style = MaterialTheme.typography.bodySmall)
+                if (!evidence.note.isNullOrBlank()) {
+                    Text(evidence.note!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun StatusChip(status: String) {
+    val (label, color) = when (status) {
+        "Expired" -> "Expired" to MaterialTheme.colorScheme.error
+        "ExpiringSoon" -> "Expiring soon" to Color(0xFFB26A00)
+        else -> "Valid" to MaterialTheme.colorScheme.primary
+    }
+    AssistChip(
+        onClick = {},
+        label = { Text(label) },
+        leadingIcon = {
+            val icon = when (status) {
+                "Expired" -> Icons.Outlined.EventBusy
+                "ExpiringSoon" -> Icons.Outlined.WarningAmber
+                else -> Icons.Outlined.CheckCircle
+            }
+            Icon(icon, contentDescription = null)
+        },
+        colors = AssistChipDefaults.assistChipColors(containerColor = color.copy(alpha = 0.12f), labelColor = color)
+    )
+}
+
+fun expiryLabel(expiresAt: String): String {
+    val now = Instant.now()
+    val expiry = parseInstant(expiresAt)
+    val days = ChronoUnit.DAYS.between(now, expiry)
+    return when {
+        days < 0 -> "Expired ${kotlin.math.abs(days)} days ago"
+        days == 0L -> "Expires today"
+        days == 1L -> "Expires in 1 day"
+        else -> "Expires in $days days"
+    }
+}
+
+fun formatDate(value: String): String {
+    val date = parseInstant(value)
+    return DateTimeFormatter.ofPattern("d MMM yyyy").withZone(ZoneOffset.UTC).format(date)
+}
+
+fun parseInstant(value: String): Instant {
+    return try {
+        Instant.parse(value)
+    } catch (ex: Exception) {
+        Instant.now()
+    }
+}
+
+fun createImageUri(context: Context): Uri {
+    val file = File.createTempFile("evidence_", ".jpg", context.cacheDir)
+    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 }
 
 class TokenStore(context: Context) {
@@ -504,17 +1214,29 @@ interface ApiService {
 
     @Multipart
     @POST("competencies/{id}/evidence")
-    suspend fun uploadEvidence(@Path("id") id: String, @Part file: MultipartBody.Part): Evidence
+    suspend fun uploadEvidence(
+        @Path("id") id: String,
+        @Part file: MultipartBody.Part,
+        @Part("note") note: RequestBody?
+    ): Evidence
 
     @POST("sharepacks")
     suspend fun createSharePack(@Body request: SharePackCreateRequest): SharePackResponse
+
+    @GET("profile")
+    suspend fun getProfile(): NurseProfile
+
+    @PUT("profile")
+    suspend fun updateProfile(@Body request: NurseProfileUpdateRequest): NurseProfile
 }
 
 data class CompetencySummary(
     val id: String,
     val title: String,
     val description: String?,
+    val achievedAt: String,
     val expiresAt: String,
+    val category: String,
     val status: String,
     val evidenceCount: Int
 )
@@ -523,7 +1245,9 @@ data class CompetencyDetail(
     val id: String,
     val title: String,
     val description: String?,
+    val achievedAt: String,
     val expiresAt: String,
+    val category: String,
     val status: String,
     val evidence: List<Evidence>
 )
@@ -532,6 +1256,7 @@ data class Evidence(
     val id: String,
     val fileName: String,
     val contentType: String?,
+    val note: String?,
     val size: Long,
     val uploadedAt: String
 )
@@ -539,12 +1264,15 @@ data class Evidence(
 data class CompetencyUpsertRequest(
     val title: String,
     val description: String?,
-    val expiresAt: Date
+    val achievedAt: Date,
+    val expiresAt: Date,
+    val category: String
 )
 
 data class SharePackCreateRequest(
     val expiryDays: Int,
-    val competencyIds: List<String>
+    val competencyIds: List<String>,
+    val includeNmcPin: Boolean
 )
 
 data class SharePackResponse(
@@ -553,16 +1281,85 @@ data class SharePackResponse(
     val shareUrl: String
 )
 
+data class NurseProfile(
+    val fullName: String,
+    val preferredName: String?,
+    val nmcPin: String?,
+    val registrationType: String?,
+    val employer: String?,
+    val roleBand: String?,
+    val email: String?,
+    val phone: String?,
+    val bio: String?
+)
+
+data class NurseProfileUpdateRequest(
+    val fullName: String,
+    val preferredName: String?,
+    val nmcPin: String?,
+    val registrationType: String?,
+    val employer: String?,
+    val roleBand: String?,
+    val phone: String?,
+    val bio: String?
+)
+
+data class QuickLink(
+    val title: String,
+    val description: String,
+    val url: String
+)
+
 suspend fun createMultipartFromUri(context: Context, uri: Uri): MultipartBody.Part {
     return withContext(Dispatchers.IO) {
-        val fileName = "upload_${System.currentTimeMillis()}"
+        val fileName = getDisplayName(context, uri) ?: "evidence_${System.currentTimeMillis()}"
+        val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
         val temp = File.createTempFile("upload", null, context.cacheDir)
         context.contentResolver.openInputStream(uri)?.use { input ->
             FileOutputStream(temp).use { output ->
                 input.copyTo(output)
             }
         }
-        val body = temp.asRequestBody("application/octet-stream".toMediaTypeOrNull())
+        val body = temp.asRequestBody(mimeType.toMediaTypeOrNull())
         MultipartBody.Part.createFormData("file", fileName, body)
     }
+}
+
+fun getDisplayName(context: Context, uri: Uri): String? {
+    val resolver = context.contentResolver
+    val cursor: Cursor? = resolver.query(uri, null, null, null, null)
+    cursor?.use {
+        val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (nameIndex >= 0 && it.moveToFirst()) {
+            return it.getString(nameIndex)
+        }
+    }
+    return uri.lastPathSegment
+}
+
+@Composable
+fun CompetencyPassportTheme(content: @Composable () -> Unit) {
+    val colorScheme = androidx.compose.material3.lightColorScheme(
+        primary = Color(0xFF1B4B40),
+        onPrimary = Color.White,
+        secondary = Color(0xFF496A5F),
+        primaryContainer = Color(0xFFD7E8E1),
+        background = Color(0xFFF5F4F1),
+        surface = Color(0xFFFFFFFF),
+        surfaceVariant = Color(0xFFE5E2DD),
+        error = Color(0xFFB13A2A),
+        onSurfaceVariant = Color(0xFF5E6A63)
+    )
+
+    val typography = MaterialTheme.typography.copy(
+        titleLarge = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Serif),
+        titleMedium = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Serif),
+        bodySmall = MaterialTheme.typography.bodySmall.copy(letterSpacing = 0.2.sp)
+    )
+
+    MaterialTheme(
+        colorScheme = colorScheme,
+        typography = typography,
+        content = content
+    )
 }

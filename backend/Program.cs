@@ -1,5 +1,7 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.IO;
+using System.Text.RegularExpressions;
 using Backend.Data;
 using Backend.Dtos;
 using Backend.Models;
@@ -74,6 +76,98 @@ app.MapGet("/me", (ClaimsPrincipal user) =>
     return Results.Ok(new { userId, name });
 }).RequireAuthorization();
 
+app.MapGet("/profile", async (AppDbContext db, ClaimsPrincipal user) =>
+{
+    var userId = GetUserId(user);
+    var profile = await db.NurseProfiles.FirstOrDefaultAsync(p => p.UserId == userId);
+    var email = GetEmail(user);
+    var displayName = user.FindFirstValue("name") ?? user.FindFirstValue(ClaimTypes.Name) ?? "Unknown";
+
+    if (profile is null)
+    {
+        profile = new NurseProfile
+        {
+            UserId = userId,
+            FullName = displayName,
+            Email = email,
+            UpdatedAt = DateTime.UtcNow
+        };
+        db.NurseProfiles.Add(profile);
+        await db.SaveChangesAsync();
+    }
+    else if (!string.IsNullOrWhiteSpace(email) && !string.Equals(profile.Email, email, StringComparison.OrdinalIgnoreCase))
+    {
+        profile.Email = email;
+        profile.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+    }
+
+    return Results.Ok(new NurseProfileDto(
+        profile.FullName,
+        profile.PreferredName,
+        profile.NmcPin,
+        profile.RegistrationType,
+        profile.Employer,
+        profile.RoleBand,
+        profile.Email,
+        profile.Phone,
+        profile.Bio));
+}).RequireAuthorization();
+
+app.MapPut("/profile", async (AppDbContext db, ClaimsPrincipal user, NurseProfileUpdateRequest request) =>
+{
+    var userId = GetUserId(user);
+    var profile = await db.NurseProfiles.FirstOrDefaultAsync(p => p.UserId == userId);
+    var email = GetEmail(user);
+    var fullName = request.FullName?.Trim() ?? string.Empty;
+
+    if (string.IsNullOrWhiteSpace(fullName))
+    {
+        return Results.BadRequest(new { message = "Full name is required." });
+    }
+
+    var normalizedPin = NormalizeNmcPin(request.NmcPin);
+    if (normalizedPin == string.Empty)
+    {
+        return Results.BadRequest(new { message = "NMC PIN must be 2 letters followed by 6 digits." });
+    }
+
+    if (!IsValidRegistrationType(request.RegistrationType))
+    {
+        return Results.BadRequest(new { message = "Registration type must be RN Adult, RN Mental Health, RN Learning Disability, or RN Child." });
+    }
+
+    if (profile is null)
+    {
+        profile = new NurseProfile { UserId = userId };
+        db.NurseProfiles.Add(profile);
+    }
+
+    profile.FullName = fullName;
+    profile.PreferredName = string.IsNullOrWhiteSpace(request.PreferredName) ? null : request.PreferredName.Trim();
+    profile.NmcPin = normalizedPin;
+    profile.RegistrationType = NormalizeRegistrationType(request.RegistrationType);
+    profile.Employer = string.IsNullOrWhiteSpace(request.Employer) ? null : request.Employer.Trim();
+    profile.RoleBand = string.IsNullOrWhiteSpace(request.RoleBand) ? null : request.RoleBand.Trim();
+    profile.Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim();
+    profile.Bio = string.IsNullOrWhiteSpace(request.Bio) ? null : request.Bio.Trim();
+    profile.Email = email;
+    profile.UpdatedAt = DateTime.UtcNow;
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new NurseProfileDto(
+        profile.FullName,
+        profile.PreferredName,
+        profile.NmcPin,
+        profile.RegistrationType,
+        profile.Employer,
+        profile.RoleBand,
+        profile.Email,
+        profile.Phone,
+        profile.Bio));
+}).RequireAuthorization();
+
 app.MapGet("/competencies", async (AppDbContext db, ClaimsPrincipal user) =>
 {
     var userId = GetUserId(user);
@@ -87,7 +181,9 @@ app.MapGet("/competencies", async (AppDbContext db, ClaimsPrincipal user) =>
             c.Id,
             c.Title,
             c.Description,
+            c.AchievedAt,
             c.ExpiresAt,
+            c.Category,
             EvidenceCount = c.Evidence.Count
         })
         .ToListAsync();
@@ -97,7 +193,9 @@ app.MapGet("/competencies", async (AppDbContext db, ClaimsPrincipal user) =>
             c.Id,
             c.Title,
             c.Description,
+            c.AchievedAt,
             c.ExpiresAt,
+            c.Category,
             ComputeStatus(c.ExpiresAt, now),
             c.EvidenceCount))
         .ToList();
@@ -109,13 +207,34 @@ app.MapPost("/competencies", async (AppDbContext db, ClaimsPrincipal user, Compe
 {
     var userId = GetUserId(user);
     var now = DateTime.UtcNow;
+    var achievedAt = request.AchievedAt == default ? now : request.AchievedAt;
+    var category = NormalizeCategory(request.Category);
+
+    var title = request.Title?.Trim() ?? string.Empty;
+
+    if (string.IsNullOrWhiteSpace(title))
+    {
+        return Results.BadRequest(new { message = "Title is required." });
+    }
+
+    if (!IsValidCategory(category))
+    {
+        return Results.BadRequest(new { message = "Category must be Mandatory, Clinical, or Specialist." });
+    }
+
+    if (request.ExpiresAt < achievedAt)
+    {
+        return Results.BadRequest(new { message = "Expiry date cannot be before achieved date." });
+    }
 
     var competency = new Competency
     {
         Id = Guid.NewGuid(),
-        Title = request.Title,
+        Title = title,
         Description = request.Description,
+        AchievedAt = achievedAt,
         ExpiresAt = request.ExpiresAt,
+        Category = category,
         UserId = userId,
         CreatedAt = now,
         UpdatedAt = now
@@ -128,7 +247,9 @@ app.MapPost("/competencies", async (AppDbContext db, ClaimsPrincipal user, Compe
         competency.Id,
         competency.Title,
         competency.Description,
+        competency.AchievedAt,
         competency.ExpiresAt,
+        competency.Category,
         ComputeStatus(competency.ExpiresAt, now),
         Array.Empty<EvidenceDto>()));
 }).RequireAuthorization();
@@ -150,14 +271,16 @@ app.MapGet("/competencies/{id:guid}", async (AppDbContext db, ClaimsPrincipal us
 
     var evidence = competency.Evidence
         .OrderByDescending(e => e.UploadedAt)
-        .Select(e => new EvidenceDto(e.Id, e.FileName, e.ContentType, e.Size, e.UploadedAt))
+        .Select(e => new EvidenceDto(e.Id, e.FileName, e.ContentType, e.Note, e.Size, e.UploadedAt))
         .ToList();
 
     return Results.Ok(new CompetencyDetailDto(
         competency.Id,
         competency.Title,
         competency.Description,
+        competency.AchievedAt,
         competency.ExpiresAt,
+        competency.Category,
         ComputeStatus(competency.ExpiresAt, now),
         evidence));
 }).RequireAuthorization();
@@ -171,16 +294,37 @@ app.MapPut("/competencies/{id:guid}", async (AppDbContext db, ClaimsPrincipal us
         return Results.NotFound();
     }
 
-    competency.Title = request.Title;
+    var title = request.Title?.Trim() ?? string.Empty;
+    var achievedAt = request.AchievedAt == default ? competency.AchievedAt : request.AchievedAt;
+    var category = NormalizeCategory(request.Category);
+
+    if (string.IsNullOrWhiteSpace(title))
+    {
+        return Results.BadRequest(new { message = "Title is required." });
+    }
+
+    if (!IsValidCategory(category))
+    {
+        return Results.BadRequest(new { message = "Category must be Mandatory, Clinical, or Specialist." });
+    }
+
+    if (request.ExpiresAt < achievedAt)
+    {
+        return Results.BadRequest(new { message = "Expiry date cannot be before achieved date." });
+    }
+
+    competency.Title = title;
     competency.Description = request.Description;
+    competency.AchievedAt = achievedAt;
     competency.ExpiresAt = request.ExpiresAt;
+    competency.Category = category;
     competency.UpdatedAt = DateTime.UtcNow;
 
     await db.SaveChangesAsync();
     return Results.NoContent();
 }).RequireAuthorization();
 
-app.MapPost("/competencies/{id:guid}/evidence", async (AppDbContext db, BlobStorageService storage, ClaimsPrincipal user, Guid id, HttpRequest request, CancellationToken cancellationToken) =>
+app.MapPost("/competencies/{id:guid}/evidence", async (AppDbContext db, BlobStorageService storage, ClaimsPrincipal user, Guid id, HttpRequest request, IConfiguration config, CancellationToken cancellationToken) =>
 {
     if (!request.HasFormContentType)
     {
@@ -192,6 +336,17 @@ app.MapPost("/competencies/{id:guid}/evidence", async (AppDbContext db, BlobStor
     if (file is null)
     {
         return Results.BadRequest(new { message = "Missing file field named 'file'." });
+    }
+
+    var maxBytes = GetEvidenceMaxBytes(config);
+    if (file.Length > maxBytes)
+    {
+        return Results.BadRequest(new { message = $"Evidence file exceeds limit of {maxBytes / (1024 * 1024)} MB." });
+    }
+
+    if (!IsAllowedEvidence(file.ContentType, file.FileName))
+    {
+        return Results.BadRequest(new { message = "Unsupported evidence type. Upload photos or PDF/DOC/DOCX files." });
     }
 
     var userId = GetUserId(user);
@@ -207,12 +362,20 @@ app.MapPost("/competencies/{id:guid}/evidence", async (AppDbContext db, BlobStor
     await using var stream = file.OpenReadStream();
     await storage.UploadAsync(blobName, stream, file.ContentType, cancellationToken);
 
+    var note = form.TryGetValue("note", out var noteValues) ? noteValues.ToString() : null;
+    note = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+    if (note != null && note.Length > 400)
+    {
+        return Results.BadRequest(new { message = "Evidence note must be 400 characters or fewer." });
+    }
+
     var evidence = new Evidence
     {
         Id = Guid.NewGuid(),
         CompetencyId = competency.Id,
         FileName = file.FileName,
         ContentType = file.ContentType,
+        Note = note,
         BlobName = blobName,
         Size = file.Length,
         UploadedAt = DateTime.UtcNow
@@ -221,7 +384,32 @@ app.MapPost("/competencies/{id:guid}/evidence", async (AppDbContext db, BlobStor
     db.Evidence.Add(evidence);
     await db.SaveChangesAsync(cancellationToken);
 
-    return Results.Ok(new EvidenceDto(evidence.Id, evidence.FileName, evidence.ContentType, evidence.Size, evidence.UploadedAt));
+    return Results.Ok(new EvidenceDto(evidence.Id, evidence.FileName, evidence.ContentType, evidence.Note, evidence.Size, evidence.UploadedAt));
+}).RequireAuthorization();
+
+app.MapGet("/competencies/{id:guid}/evidence/{evidenceId:guid}/download", async (AppDbContext db, BlobStorageService storage, ClaimsPrincipal user, Guid id, Guid evidenceId, CancellationToken cancellationToken) =>
+{
+    var userId = GetUserId(user);
+    var competency = await db.Competencies
+        .AsNoTracking()
+        .FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId, cancellationToken);
+
+    if (competency is null)
+    {
+        return Results.NotFound();
+    }
+
+    var evidence = await db.Evidence
+        .AsNoTracking()
+        .FirstOrDefaultAsync(e => e.Id == evidenceId && e.CompetencyId == id, cancellationToken);
+
+    if (evidence is null)
+    {
+        return Results.NotFound();
+    }
+
+    var stream = await storage.OpenReadAsync(evidence.BlobName, cancellationToken);
+    return Results.File(stream, evidence.ContentType ?? "application/octet-stream", evidence.FileName);
 }).RequireAuthorization();
 
 app.MapPost("/sharepacks", async (AppDbContext db, ClaimsPrincipal user, SharePackCreateRequest request, HttpContext httpContext) =>
@@ -237,6 +425,10 @@ app.MapPost("/sharepacks", async (AppDbContext db, ClaimsPrincipal user, SharePa
     }
 
     var userId = GetUserId(user);
+    var profile = await db.NurseProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId);
+    var nurseName = profile?.FullName ?? user.FindFirstValue("name") ?? user.FindFirstValue(ClaimTypes.Name);
+    var registrationType = profile?.RegistrationType;
+    var nmcPin = request.IncludeNmcPin ? profile?.NmcPin : null;
 
     var competencies = await db.Competencies
         .Where(c => c.UserId == userId && request.CompetencyIds.Contains(c.Id))
@@ -259,6 +451,10 @@ app.MapPost("/sharepacks", async (AppDbContext db, ClaimsPrincipal user, SharePa
         Id = Guid.NewGuid(),
         OwnerUserId = userId,
         TokenHash = tokenHash,
+        NurseName = nurseName,
+        RegistrationType = registrationType,
+        NmcPin = nmcPin,
+        IncludeNmcPin = request.IncludeNmcPin,
         ExpiresAt = expiresAt,
         CreatedAt = DateTime.UtcNow,
         Items = competencies.Select(id => new SharePackItem { CompetencyId = id }).ToList()
@@ -300,14 +496,17 @@ app.MapGet("/share/{token}", async (AppDbContext db, string token) =>
             c!.Id,
             c.Title,
             c.Description,
+            c.AchievedAt,
             c.ExpiresAt,
+            c.Category,
             ComputeStatus(c.ExpiresAt, now),
             c.Evidence.OrderByDescending(e => e.UploadedAt)
-                .Select(e => new SharePackEvidenceDto(e.Id, e.FileName, e.ContentType, e.Size, e.UploadedAt))
+                .Select(e => new SharePackEvidenceDto(e.Id, e.FileName, e.ContentType, e.Note, e.Size, e.UploadedAt))
                 .ToList()))
         .ToList();
 
-    return Results.Ok(new SharePackPublicDto(sharePack.ExpiresAt, competencies));
+    var nmcPin = sharePack.IncludeNmcPin ? sharePack.NmcPin : null;
+    return Results.Ok(new SharePackPublicDto(sharePack.ExpiresAt, sharePack.NurseName, sharePack.RegistrationType, nmcPin, competencies));
 });
 
 app.MapGet("/share/{token}/download/{evidenceId:guid}", async (AppDbContext db, BlobStorageService storage, string token, Guid evidenceId, CancellationToken cancellationToken) =>
@@ -350,6 +549,14 @@ static string GetUserId(ClaimsPrincipal user)
         ?? throw new InvalidOperationException("User id claim not found.");
 }
 
+static string? GetEmail(ClaimsPrincipal user)
+{
+    return user.FindFirstValue("preferred_username")
+        ?? user.FindFirstValue("upn")
+        ?? user.FindFirstValue(ClaimTypes.Email)
+        ?? user.FindFirstValue("email");
+}
+
 static string ComputeStatus(DateTime expiresAt, DateTime now)
 {
     if (expiresAt < now)
@@ -363,6 +570,76 @@ static string ComputeStatus(DateTime expiresAt, DateTime now)
     }
 
     return "Valid";
+}
+
+static string NormalizeCategory(string? category)
+{
+    return string.IsNullOrWhiteSpace(category) ? "Mandatory" : category.Trim();
+}
+
+static bool IsValidCategory(string? category)
+{
+    if (string.IsNullOrWhiteSpace(category))
+    {
+        return false;
+    }
+
+    return category.Equals("Mandatory", StringComparison.OrdinalIgnoreCase)
+        || category.Equals("Clinical", StringComparison.OrdinalIgnoreCase)
+        || category.Equals("Specialist", StringComparison.OrdinalIgnoreCase);
+}
+
+static string? NormalizeRegistrationType(string? registrationType)
+{
+    return string.IsNullOrWhiteSpace(registrationType) ? null : registrationType.Trim();
+}
+
+static bool IsValidRegistrationType(string? registrationType)
+{
+    if (string.IsNullOrWhiteSpace(registrationType))
+    {
+        return false;
+    }
+
+    return registrationType.Equals("RN Adult", StringComparison.OrdinalIgnoreCase)
+        || registrationType.Equals("RN Mental Health", StringComparison.OrdinalIgnoreCase)
+        || registrationType.Equals("RN Learning Disability", StringComparison.OrdinalIgnoreCase)
+        || registrationType.Equals("RN Child", StringComparison.OrdinalIgnoreCase);
+}
+
+static string? NormalizeNmcPin(string? nmcPin)
+{
+    if (string.IsNullOrWhiteSpace(nmcPin))
+    {
+        return string.Empty;
+    }
+
+    var normalized = nmcPin.Trim().ToUpperInvariant();
+    return Regex.IsMatch(normalized, "^[A-Z]{2}\\d{6}$") ? normalized : string.Empty;
+}
+
+static long GetEvidenceMaxBytes(IConfiguration config)
+{
+    var maxBytes = config.GetValue<long?>("Evidence:MaxBytes");
+    return maxBytes.HasValue && maxBytes.Value > 0 ? maxBytes.Value : 10 * 1024 * 1024;
+}
+
+static bool IsAllowedEvidence(string? contentType, string fileName)
+{
+    if (!string.IsNullOrWhiteSpace(contentType))
+    {
+        if (contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return contentType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase)
+            || contentType.Equals("application/msword", StringComparison.OrdinalIgnoreCase)
+            || contentType.Equals("application/vnd.openxmlformats-officedocument.wordprocessingml.document", StringComparison.OrdinalIgnoreCase);
+    }
+
+    var extension = Path.GetExtension(fileName)?.ToLowerInvariant();
+    return extension is ".jpg" or ".jpeg" or ".png" or ".heic" or ".pdf" or ".doc" or ".docx";
 }
 
 static string ToUrlSafeToken(byte[] bytes)

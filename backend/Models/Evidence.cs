@@ -19,6 +19,9 @@ public sealed class Evidence
     [MaxLength(100)]
     public string? ContentType { get; set; }
 
+    [MaxLength(400)]
+    public string? Note { get; set; }
+
     [Required]
     [MaxLength(400)]
     public string BlobName { get; set; } = string.Empty;

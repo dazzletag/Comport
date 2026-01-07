@@ -11,6 +11,7 @@ public sealed class AppDbContext : DbContext
 
     public DbSet<Competency> Competencies => Set<Competency>();
     public DbSet<Evidence> Evidence => Set<Evidence>();
+    public DbSet<NurseProfile> NurseProfiles => Set<NurseProfile>();
     public DbSet<SharePack> SharePacks => Set<SharePack>();
     public DbSet<SharePackItem> SharePackItems => Set<SharePackItem>();
 
@@ -28,5 +29,8 @@ public sealed class AppDbContext : DbContext
             .HasOne(x => x.Competency)
             .WithMany(x => x.SharePackItems)
             .HasForeignKey(x => x.CompetencyId);
+
+        modelBuilder.Entity<NurseProfile>()
+            .HasKey(x => x.UserId);
     }
 }

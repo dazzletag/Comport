@@ -2,6 +2,10 @@ const statusElement = document.getElementById("packStatus");
 const errorElement = document.getElementById("error");
 const contentElement = document.getElementById("content");
 const listElement = document.getElementById("competencyList");
+const nurseNameElement = document.getElementById("nurseName");
+const registrationTypeElement = document.getElementById("registrationType");
+const nmcPinElement = document.getElementById("nmcPin");
+const printButton = document.getElementById("printBtn");
 
 function showError(message) {
   errorElement.textContent = message;
@@ -14,14 +18,33 @@ function formatDate(value) {
   return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
+function expiryText(expiresAt) {
+  const now = new Date();
+  const expiry = new Date(expiresAt);
+  const diffDays = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return `Expired ${Math.abs(diffDays)} days ago`;
+  if (diffDays === 0) return "Expires today";
+  if (diffDays === 1) return "Expires in 1 day";
+  return `Expires in ${diffDays} days`;
+}
+
 function statusClass(status) {
   if (status === "ExpiringSoon") return "chip expiring";
   if (status === "Expired") return "chip expired";
   return "chip";
 }
 
+function statusLabel(status) {
+  if (status === "ExpiringSoon") return "Expiring soon";
+  if (status === "Expired") return "Expired";
+  return "Valid";
+}
+
 function renderPack(data, token) {
-  statusElement.textContent = `Expires ${formatDate(data.expiresAt)}`;
+  statusElement.textContent = `Pack expiry ${formatDate(data.expiresAt)}`;
+  nurseNameElement.textContent = data.nurseName || "Not provided";
+  registrationTypeElement.textContent = data.registrationType || "Not provided";
+  nmcPinElement.textContent = data.nmcPin || "Not shared";
   listElement.innerHTML = "";
 
   data.competencies.forEach((competency) => {
@@ -33,13 +56,17 @@ function renderPack(data, token) {
 
     const expiryChip = document.createElement("span");
     expiryChip.className = statusClass(competency.status);
-    expiryChip.textContent = competency.status;
+    expiryChip.textContent = statusLabel(competency.status);
 
     const dateChip = document.createElement("span");
     dateChip.className = "chip";
-    dateChip.textContent = `Expiry ${formatDate(competency.expiresAt)}`;
+    dateChip.textContent = expiryText(competency.expiresAt);
 
-    meta.append(expiryChip, dateChip);
+    const categoryChip = document.createElement("span");
+    categoryChip.className = "chip subtle";
+    categoryChip.textContent = competency.category || "Mandatory";
+
+    meta.append(expiryChip, dateChip, categoryChip);
 
     const evidenceList = document.createElement("ul");
     evidenceList.className = "evidence";
@@ -51,20 +78,36 @@ function renderPack(data, token) {
     } else {
       competency.evidence.forEach((evidence) => {
         const item = document.createElement("li");
+        const type = document.createElement("span");
+        type.className = "evidence__type";
+        type.textContent = evidence.contentType?.startsWith("image/") ? "Photo" : "Document";
         const link = document.createElement("a");
         link.href = `${window.SHARE_API_BASE}/share/${token}/download/${evidence.id}`;
         link.textContent = `${evidence.fileName} (${Math.round(evidence.size / 1024)} KB)`;
         link.target = "_blank";
-        item.appendChild(link);
+        item.append(type, link);
+        if (evidence.note) {
+          const note = document.createElement("div");
+          note.className = "evidence__note";
+          note.textContent = evidence.note;
+          item.appendChild(note);
+        }
         evidenceList.appendChild(item);
       });
     }
 
     const description = competency.description ? `<p>${competency.description}</p>` : "";
+    const timeline = `
+      <div class="timeline">
+        <div><span>Achieved</span>${formatDate(competency.achievedAt)}</div>
+        <div><span>Expiry</span>${formatDate(competency.expiresAt)}</div>
+      </div>
+    `;
 
     card.innerHTML = `
       <h2>${competency.title}</h2>
       ${description}
+      ${timeline}
     `;
 
     card.appendChild(meta);
@@ -104,5 +147,9 @@ async function init() {
     statusElement.textContent = "Unavailable";
   }
 }
+
+printButton?.addEventListener("click", () => {
+  window.print();
+});
 
 init();

@@ -14,7 +14,12 @@ public sealed class Competency
     [MaxLength(2000)]
     public string? Description { get; set; }
 
+    public DateTime AchievedAt { get; set; }
+
     public DateTime ExpiresAt { get; set; }
+
+    [MaxLength(40)]
+    public string Category { get; set; } = "Mandatory";
 
     [Required]
     [MaxLength(100)]

@@ -1,6 +1,13 @@
 # CompetencyPassport
 
-CompetencyPassport is an Android-first MVP that stores competencies and evidence in Azure, authenticates with Microsoft Entra ID (MSAL), and produces time-limited Share Pack links with a public read-only viewer.
+CompetencyPassport is an Android-first product that stores competencies and evidence in Azure, authenticates with Microsoft Entra ID (MSAL), and produces time-limited Share Pack links with a public read-only viewer.
+
+## What's new
+- Nurse Profile with NMC PIN validation and UK-specific registration types.
+- Rich evidence capture (photos + PDF/DOC/DOCX) with optional notes and thumbnails.
+- Clinical-grade UI for competency status, expiry timelines, and categories.
+- Quick reference links for core UK nursing guidance.
+- Formal, printable share viewer with optional NMC PIN inclusion.
 
 ## Architecture
 - **Android app**: Kotlin + Jetpack Compose + MSAL for Entra ID login.
@@ -61,12 +68,14 @@ AzureAd__Audience=api://<API_APP_CLIENT_ID>
 Sql__ConnectionString=Server=tcp:<SQL_SERVER_NAME>.database.windows.net,1433;Initial Catalog=competencypassport;Persist Security Info=False;User ID=<SQL_ADMIN_LOGIN>;Password=<SQL_ADMIN_PASSWORD>;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;
 Storage__AccountName=<STORAGE_ACCOUNT>
 Storage__ContainerName=evidence
+Evidence__MaxBytes=10485760
 ShareViewer__BaseUrl=https://<SHARE_VIEWER_HOST>
 ```
 
 Notes:
 - Storage access uses Managed Identity when `Storage__ConnectionString` is not set.
 - SQL currently uses a connection string for MVP; you can later move to AAD auth.
+- Evidence uploads are limited to the max byte size (default 10 MB) and to photo/PDF/DOC/DOCX file types.
 
 ### Run backend locally
 ```powershell
@@ -96,11 +105,14 @@ cd android
 ## API Endpoints
 Authenticated:
 - `GET /me`
+- `GET /profile`
+- `PUT /profile`
 - `GET /competencies`
 - `POST /competencies`
 - `GET /competencies/{id}`
 - `PUT /competencies/{id}`
 - `POST /competencies/{id}/evidence`
+- `GET /competencies/{id}/evidence/{evidenceId}/download`
 - `POST /sharepacks`
 
 Public:
