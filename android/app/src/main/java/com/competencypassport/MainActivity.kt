@@ -37,6 +37,7 @@ import androidx.compose.material.icons.outlined.Assignment
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.EventAvailable
 import androidx.compose.material.icons.outlined.EventBusy
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Link
@@ -49,6 +50,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,7 +64,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -121,7 +126,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
 import java.time.temporal.ChronoUnit
 import java.util.Date
 
@@ -607,24 +611,31 @@ fun CompetencyDetailScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(onClick = {
-                        val uri = createImageUri(context)
-                        cameraUriState.value = uri
-                        cameraLauncher.launch(uri)
-                    }) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            val uri = createImageUri(context)
+                            cameraUriState.value = uri
+                            cameraLauncher.launch(uri)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Icon(Icons.Outlined.CameraAlt, contentDescription = null)
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Capture photo")
                     }
-                    OutlinedButton(onClick = { galleryLauncher.launch("image/*") }) {
+                    OutlinedButton(
+                        onClick = { galleryLauncher.launch("image/*") },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Icon(Icons.Outlined.FolderOpen, contentDescription = null)
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Photo library")
                     }
-                    OutlinedButton(onClick = {
-                        docLauncher.launch(arrayOf("*/*"))
-                    }) {
+                    OutlinedButton(
+                        onClick = { docLauncher.launch(arrayOf("*/*")) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Icon(Icons.Outlined.Description, contentDescription = null)
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Upload file")
@@ -661,8 +672,8 @@ fun CompetencyEditScreen(
 ) {
     var title by remember { mutableStateOf(initial?.title ?: "") }
     var description by remember { mutableStateOf(initial?.description ?: "") }
-    var achievedInput by remember { mutableStateOf(initial?.achievedAt?.substring(0, 10) ?: "") }
-    var expiryInput by remember { mutableStateOf(initial?.expiresAt?.substring(0, 10) ?: "") }
+    var achievedDate by remember { mutableStateOf(parseLocalDate(initial?.achievedAt)) }
+    var expiryDate by remember { mutableStateOf(parseLocalDate(initial?.expiresAt)) }
     var category by remember { mutableStateOf(initial?.category ?: "Mandatory") }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -676,8 +687,16 @@ fun CompetencyEditScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = achievedInput, onValueChange = { achievedInput = it }, label = { Text("Achieved (yyyy-MM-dd)") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = expiryInput, onValueChange = { expiryInput = it }, label = { Text("Expiry (yyyy-MM-dd)") }, modifier = Modifier.fillMaxWidth())
+                DatePickerField(
+                    label = "Achieved date",
+                    date = achievedDate,
+                    onDateSelected = { achievedDate = it }
+                )
+                DatePickerField(
+                    label = "Expiry date",
+                    date = expiryDate,
+                    onDateSelected = { expiryDate = it }
+                )
                 CategorySelector(selected = category, onSelect = { category = it })
                 if (!error.isNullOrBlank()) {
                     Text(error!!, color = MaterialTheme.colorScheme.error)
@@ -686,15 +705,15 @@ fun CompetencyEditScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedButton(onClick = onCancel) { Text("Cancel") }
                     Button(onClick = {
-                        try {
-                            val achievedDate = LocalDate.parse(achievedInput)
-                            val expiryDate = LocalDate.parse(expiryInput)
-                            val achieved = Date.from(achievedDate.atStartOfDay().toInstant(ZoneOffset.UTC))
-                            val expiry = Date.from(expiryDate.atStartOfDay().toInstant(ZoneOffset.UTC))
-                            onSave(title.trim(), description.ifBlank { null }, achieved, expiry, category)
-                        } catch (ex: DateTimeParseException) {
-                            error = "Dates must be yyyy-MM-dd"
+                        val achievedLocal = achievedDate
+                        val expiryLocal = expiryDate
+                        if (achievedLocal == null || expiryLocal == null) {
+                            error = "Select achieved and expiry dates."
+                            return@Button
                         }
+                        val achieved = Date.from(achievedLocal.atStartOfDay().toInstant(ZoneOffset.UTC))
+                        val expiry = Date.from(expiryLocal.atStartOfDay().toInstant(ZoneOffset.UTC))
+                        onSave(title.trim(), description.ifBlank { null }, achieved, expiry, category)
                     }) { Text("Save") }
                 }
             }
@@ -839,6 +858,58 @@ fun RegistrationTypeSelector(selected: String, onSelect: (String) -> Unit) {
                     }
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun DatePickerField(
+    label: String,
+    date: LocalDate?,
+    onDateSelected: (LocalDate) -> Unit
+) {
+    var open by remember { mutableStateOf(false) }
+    val initialMillis = date?.atStartOfDay()?.toInstant(ZoneOffset.UTC)?.toEpochMilli()
+    val state = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
+    val display = date?.let { formatLocalDate(it) } ?: "Select date"
+
+    OutlinedTextField(
+        value = display,
+        onValueChange = {},
+        readOnly = true,
+        label = { Text(label) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+        trailingIcon = {
+            IconButton(onClick = { open = true }) {
+                Icon(Icons.Outlined.EventAvailable, contentDescription = null)
+            }
+        }
+    )
+
+    if (open) {
+        DatePickerDialog(
+            onDismissRequest = { open = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    val millis = state.selectedDateMillis
+                    if (millis != null) {
+                        val selected = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()
+                        onDateSelected(selected)
+                    }
+                    open = false
+                }) {
+                    Text("Select")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { open = false }) {
+                    Text("Cancel")
+                }
+            }
+        ) {
+            DatePicker(state = state)
         }
     }
 }
@@ -1083,6 +1154,17 @@ fun expiryLabel(expiresAt: String): String {
 fun formatDate(value: String): String {
     val date = parseInstant(value)
     return DateTimeFormatter.ofPattern("d MMM yyyy").withZone(ZoneOffset.UTC).format(date)
+}
+
+fun parseLocalDate(value: String?): LocalDate? {
+    if (value.isNullOrBlank()) {
+        return null
+    }
+    return runCatching { LocalDate.parse(value.substring(0, 10)) }.getOrNull()
+}
+
+fun formatLocalDate(value: LocalDate): String {
+    return DateTimeFormatter.ofPattern("d MMM yyyy").format(value)
 }
 
 fun parseInstant(value: String): Instant {
