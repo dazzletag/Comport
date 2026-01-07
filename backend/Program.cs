@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using Backend.Data;
 using Backend.Dtos;
@@ -44,13 +45,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         var instance = config["Instance"] ?? "https://login.microsoftonline.com/";
         var tenantId = config["TenantId"] ?? throw new InvalidOperationException("AzureAd:TenantId missing.");
         var audience = config["Audience"] ?? throw new InvalidOperationException("AzureAd:Audience missing.");
+        var normalizedAudience = audience.StartsWith("api://", StringComparison.OrdinalIgnoreCase)
+            ? audience["api://".Length..]
+            : $"api://{audience}";
 
         options.Authority = $"{instance}{tenantId}/v2.0";
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
             ValidIssuer = $"{instance}{tenantId}/v2.0",
-            ValidAudience = audience
+            ValidAudiences = new[] { audience, normalizedAudience }.Distinct(StringComparer.OrdinalIgnoreCase)
         };
     });
 
