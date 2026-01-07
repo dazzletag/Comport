@@ -128,6 +128,7 @@ import retrofit2.http.Part
 import retrofit2.http.Path
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -135,6 +136,7 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Date
 import kotlin.coroutines.resume
+import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -211,6 +213,7 @@ fun CompetencyPassportApp() {
                             authManager.signIn(activity, object : MsalAuthManager.AuthCallback {
                                 override fun onSuccess(result: IAuthenticationResult) {
                                     tokenStore.save(result.accessToken)
+                                    logTokenDetails("AuthToken", result.accessToken)
                                     screen = AppScreen.Home
                                     loadCompetencies()
                                     loadProfile()
@@ -393,7 +396,7 @@ fun CompetencyPassportApp() {
                                                             if (ex.code() == 401) {
                                                                 tokenStore.clear()
                                                                 screen = AppScreen.Login
-                                                                val message = "Session expired. Please sign in again."
+                                                                val message = "Session expired. Please sign in again. (Check API scope/audience if this repeats.)"
                                                                 errorMessage = message
                                                                 Log.e("CompetencySave", message, ex)
                                                                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
@@ -1230,6 +1233,34 @@ suspend fun refreshTokenIfNeeded(authManager: MsalAuthManager, tokenStore: Token
     return authManager.acquireTokenSilent() ?: tokenStore.accessToken
 }
 
+fun logTokenDetails(tag: String, token: String?) {
+    if (token.isNullOrBlank()) {
+        Log.w(tag, "No access token available.")
+        return
+    }
+    val parts = token.split(".")
+    if (parts.size < 2) {
+        Log.w(tag, "Invalid token format.")
+        return
+    }
+    val payload = try {
+        val decoded = android.util.Base64.decode(parts[1], android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP)
+        String(decoded, StandardCharsets.UTF_8)
+    } catch (ex: Exception) {
+        Log.w(tag, "Unable to decode token payload.", ex)
+        return
+    }
+    val json = try {
+        JSONObject(payload)
+    } catch (ex: Exception) {
+        Log.w(tag, "Unable to parse token payload.", ex)
+        return
+    }
+    val aud = json.optString("aud")
+    val scp = json.optString("scp")
+    Log.i(tag, "Token aud=$aud scp=$scp")
+}
+
 class TokenStore(context: Context) {
     private val prefs = EncryptedSharedPreferences.create(
         context,
@@ -1315,6 +1346,7 @@ class MsalAuthManager(private val context: Context) {
                 }
                 currentApp.acquireTokenSilentAsync(scopes, activeAccount.authority, object : SilentAuthenticationCallback {
                     override fun onSuccess(authenticationResult: IAuthenticationResult) {
+                        logTokenDetails("SilentToken", authenticationResult.accessToken)
                         cont.resume(authenticationResult.accessToken)
                     }
 
@@ -1346,6 +1378,7 @@ class ApiClient(private val tokenStore: TokenStore) {
         val newRequest = if (!token.isNullOrBlank()) {
             request.newBuilder().addHeader("Authorization", "Bearer $token").build()
         } else {
+            Log.w("ApiAuth", "Missing access token for ${request.method} ${request.url}")
             request
         }
         chain.proceed(newRequest)
