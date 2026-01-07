@@ -20,7 +20,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
                     android:host="com.competencypassport"
-                    android:path="/6DPujDVvBvYHALyRCENz894GoKY"
+                    android:path="/6DPujDVvBvYHALyRCENz894GoKY=3D"
                     android:scheme="msauth" />
             </intent-filter>
         </activity>
