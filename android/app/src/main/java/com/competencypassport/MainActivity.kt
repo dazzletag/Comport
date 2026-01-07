@@ -92,10 +92,12 @@ import androidx.security.crypto.MasterKey
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.microsoft.identity.client.AuthenticationCallback
+import com.microsoft.identity.client.IAccount
 import com.microsoft.identity.client.IAuthenticationResult
 import com.microsoft.identity.client.IPublicClientApplication
 import com.microsoft.identity.client.ISingleAccountPublicClientApplication
 import com.microsoft.identity.client.PublicClientApplication
+import com.microsoft.identity.client.SilentAuthenticationCallback
 import com.microsoft.identity.client.exception.MsalClientException
 import com.microsoft.identity.client.exception.MsalException
 import com.squareup.moshi.Moshi
@@ -104,6 +106,7 @@ import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Headers
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -131,6 +134,7 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Date
+import kotlin.coroutines.resume
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -166,6 +170,7 @@ fun CompetencyPassportApp() {
         scope.launch {
             errorMessage = null
             try {
+                refreshTokenIfNeeded(authManager, tokenStore)?.let { tokenStore.save(it) }
                 competencies = api.getCompetencies()
             } catch (ex: Exception) {
                 errorMessage = "Failed to load competencies."
@@ -177,6 +182,7 @@ fun CompetencyPassportApp() {
         scope.launch {
             errorMessage = null
             try {
+                refreshTokenIfNeeded(authManager, tokenStore)?.let { tokenStore.save(it) }
                 profile = api.getProfile()
             } catch (ex: Exception) {
                 errorMessage = "Failed to load profile."
@@ -360,6 +366,15 @@ fun CompetencyPassportApp() {
                                                     scope.launch {
                                                         errorMessage = null
                                                         try {
+                                                            val refreshed = refreshTokenIfNeeded(authManager, tokenStore)
+                                                            if (refreshed == null && tokenStore.accessToken.isNullOrBlank()) {
+                                                                screen = AppScreen.Login
+                                                                val message = "Session expired. Please sign in again."
+                                                                errorMessage = message
+                                                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                                                return@launch
+                                                            }
+                                                            refreshed?.let { tokenStore.save(it) }
                                                             val request = CompetencyUpsertRequest(
                                                                 title,
                                                                 description,
@@ -1211,6 +1226,10 @@ fun createImageUri(context: Context): Uri {
     return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 }
 
+suspend fun refreshTokenIfNeeded(authManager: MsalAuthManager, tokenStore: TokenStore): String? {
+    return authManager.acquireTokenSilent() ?: tokenStore.accessToken
+}
+
 class TokenStore(context: Context) {
     private val prefs = EncryptedSharedPreferences.create(
         context,
@@ -1277,6 +1296,39 @@ class MsalAuthManager(private val context: Context) {
             }
 
             override fun onCancel() {
+            }
+        })
+    }
+
+    suspend fun acquireTokenSilent(): String? = suspendCancellableCoroutine { cont ->
+        val scopes = arrayOf(BuildConfig.API_SCOPE)
+        val currentApp = app
+        if (currentApp == null) {
+            cont.resume(null)
+            return@suspendCancellableCoroutine
+        }
+        currentApp.getCurrentAccountAsync(object : ISingleAccountPublicClientApplication.CurrentAccountCallback {
+            override fun onAccountLoaded(activeAccount: IAccount?) {
+                if (activeAccount == null) {
+                    cont.resume(null)
+                    return
+                }
+                currentApp.acquireTokenSilentAsync(scopes, activeAccount.authority, object : SilentAuthenticationCallback {
+                    override fun onSuccess(authenticationResult: IAuthenticationResult) {
+                        cont.resume(authenticationResult.accessToken)
+                    }
+
+                    override fun onError(exception: MsalException) {
+                        cont.resume(null)
+                    }
+                })
+            }
+
+            override fun onAccountChanged(priorAccount: IAccount?, currentAccount: IAccount?) {
+            }
+
+            override fun onError(exception: MsalException) {
+                cont.resume(null)
             }
         })
     }
