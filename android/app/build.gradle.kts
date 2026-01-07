@@ -59,6 +59,7 @@ dependencies {
 
     implementation("com.microsoft.identity.client:msal:4.6.1") {
         exclude(group = "io.opentelemetry", module = "opentelemetry-bom")
+        exclude(group = "com.microsoft.device.display", module = "display-mask")
     }
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
