@@ -623,17 +623,11 @@ fun CompetencyDetailScreen(
                         Text("Photo library")
                     }
                     OutlinedButton(onClick = {
-                        docLauncher.launch(
-                            arrayOf(
-                                "application/pdf",
-                                "application/msword",
-                                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                            )
-                        )
+                        docLauncher.launch(arrayOf("*/*"))
                     }) {
                         Icon(Icons.Outlined.Description, contentDescription = null)
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Upload document")
+                        Text("Upload file")
                     }
                 }
                 if (isUploading) {
@@ -1353,9 +1347,15 @@ fun CompetencyPassportTheme(content: @Composable () -> Unit) {
     )
 
     val typography = MaterialTheme.typography.copy(
-        titleLarge = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Serif),
-        titleMedium = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Serif),
-        bodySmall = MaterialTheme.typography.bodySmall.copy(letterSpacing = 0.2.sp)
+        titleLarge = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.SansSerif),
+        titleMedium = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.SansSerif),
+        bodySmall = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.SansSerif, letterSpacing = 0.2.sp),
+        bodyMedium = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.SansSerif),
+        bodyLarge = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.SansSerif),
+        labelLarge = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.SansSerif),
+        labelMedium = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.SansSerif),
+        labelSmall = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.SansSerif),
+        titleSmall = MaterialTheme.typography.titleSmall.copy(fontFamily = FontFamily.SansSerif)
     )
 
     MaterialTheme(
