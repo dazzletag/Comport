@@ -98,6 +98,7 @@ import com.microsoft.identity.client.IPublicClientApplication
 import com.microsoft.identity.client.ISingleAccountPublicClientApplication
 import com.microsoft.identity.client.PublicClientApplication
 import com.microsoft.identity.client.SilentAuthenticationCallback
+import com.microsoft.identity.client.ISingleAccountPublicClientApplication.SignOutCallback
 import com.microsoft.identity.client.exception.MsalClientException
 import com.microsoft.identity.client.exception.MsalException
 import com.squareup.moshi.Moshi
@@ -394,6 +395,7 @@ fun CompetencyPassportApp() {
                                                             passportScreen = PassportScreen.Detail
                                                         } catch (ex: HttpException) {
                                                             if (ex.code() == 401) {
+                                                                authManager.signOut()
                                                                 tokenStore.clear()
                                                                 screen = AppScreen.Login
                                                                 val message = "Session expired. Please sign in again. (Check API scope/audience if this repeats.)"
@@ -1361,6 +1363,23 @@ class MsalAuthManager(private val context: Context) {
 
             override fun onError(exception: MsalException) {
                 cont.resume(null)
+            }
+        })
+    }
+
+    suspend fun signOut(): Boolean = suspendCancellableCoroutine { cont ->
+        val currentApp = app
+        if (currentApp == null) {
+            cont.resume(false)
+            return@suspendCancellableCoroutine
+        }
+        currentApp.signOut(object : SignOutCallback {
+            override fun onSignOut() {
+                cont.resume(true)
+            }
+
+            override fun onError(exception: MsalException) {
+                cont.resume(false)
             }
         })
     }
