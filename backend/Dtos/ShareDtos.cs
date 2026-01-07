@@ -36,6 +36,7 @@ public sealed record SharePackPublicDto(
     DateTime ExpiresAt,
     string? NurseName,
     string? RegistrationType,
+    string? Email,
     string? NmcPin,
     IReadOnlyList<SharePackCompetencyDto> Competencies
 );

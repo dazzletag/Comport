@@ -1320,6 +1320,17 @@ fun StatusChip(status: String) {
 }
 
 fun expiryLabel(expiresAt: String): String {
+    val expiryDate = parseLocalDate(expiresAt)
+    if (expiryDate != null) {
+        val today = LocalDate.now(ZoneOffset.UTC)
+        val days = ChronoUnit.DAYS.between(today, expiryDate)
+        return when {
+            days < 0 -> "Expired ${kotlin.math.abs(days)} days ago"
+            days == 0L -> "Expires today"
+            days == 1L -> "Expires in 1 day"
+            else -> "Expires in $days days"
+        }
+    }
     val now = Instant.now()
     val expiry = parseInstant(expiresAt)
     val days = ChronoUnit.DAYS.between(now, expiry)
@@ -1332,6 +1343,10 @@ fun expiryLabel(expiresAt: String): String {
 }
 
 fun formatDate(value: String): String {
+    val local = parseLocalDate(value)
+    if (local != null) {
+        return formatLocalDate(local)
+    }
     val date = parseInstant(value)
     return DateTimeFormatter.ofPattern("d MMM yyyy").withZone(ZoneOffset.UTC).format(date)
 }

@@ -4,6 +4,7 @@ const contentElement = document.getElementById("content");
 const listElement = document.getElementById("competencyList");
 const nurseNameElement = document.getElementById("nurseName");
 const registrationTypeElement = document.getElementById("registrationType");
+const emailAddressElement = document.getElementById("emailAddress");
 const nmcPinElement = document.getElementById("nmcPin");
 const printButton = document.getElementById("printBtn");
 
@@ -44,6 +45,7 @@ function renderPack(data, token) {
   statusElement.textContent = `Pack expiry ${formatDate(data.expiresAt)}`;
   nurseNameElement.textContent = data.nurseName || "Not provided";
   registrationTypeElement.textContent = data.registrationType || "Not provided";
+  emailAddressElement.textContent = data.email || "Not provided";
   nmcPinElement.textContent = data.nmcPin || "Not shared";
   listElement.innerHTML = "";
 

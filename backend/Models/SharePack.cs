@@ -21,6 +21,9 @@ public sealed class SharePack
     [MaxLength(60)]
     public string? RegistrationType { get; set; }
 
+    [MaxLength(200)]
+    public string? Email { get; set; }
+
     [MaxLength(20)]
     public string? NmcPin { get; set; }
 

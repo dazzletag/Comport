@@ -438,6 +438,7 @@ app.MapPost("/sharepacks", async (AppDbContext db, ClaimsPrincipal user, SharePa
     var profile = await db.NurseProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId);
     var nurseName = profile?.FullName ?? user.FindFirstValue("name") ?? user.FindFirstValue(ClaimTypes.Name);
     var registrationType = profile?.RegistrationType;
+    var email = profile?.Email ?? GetEmail(user);
     var nmcPin = request.IncludeNmcPin ? profile?.NmcPin : null;
 
     var competencies = await db.Competencies
@@ -463,6 +464,7 @@ app.MapPost("/sharepacks", async (AppDbContext db, ClaimsPrincipal user, SharePa
         TokenHash = tokenHash,
         NurseName = nurseName,
         RegistrationType = registrationType,
+        Email = email,
         NmcPin = nmcPin,
         IncludeNmcPin = request.IncludeNmcPin,
         ExpiresAt = expiresAt,
@@ -516,7 +518,7 @@ app.MapGet("/share/{token}", async (AppDbContext db, string token) =>
         .ToList();
 
     var nmcPin = sharePack.IncludeNmcPin ? sharePack.NmcPin : null;
-    return Results.Ok(new SharePackPublicDto(sharePack.ExpiresAt, sharePack.NurseName, sharePack.RegistrationType, nmcPin, competencies));
+    return Results.Ok(new SharePackPublicDto(sharePack.ExpiresAt, sharePack.NurseName, sharePack.RegistrationType, sharePack.Email, nmcPin, competencies));
 });
 
 app.MapGet("/share/{token}/download/{evidenceId:guid}", async (AppDbContext db, BlobStorageService storage, string token, Guid evidenceId, CancellationToken cancellationToken) =>

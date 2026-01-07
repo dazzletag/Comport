@@ -170,6 +170,10 @@ namespace Backend.Migrations
                     b.Property<DateTime>("ExpiresAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("Email")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<bool>("IncludeNmcPin")
                         .HasColumnType("bit");
 
