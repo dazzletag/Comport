@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.microsoft.identity.client.*
+import com.microsoft.identity.client.exception.MsalClientException
 import com.microsoft.identity.client.exception.MsalException
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.adapters.Rfc3339DateJsonAdapter
@@ -417,6 +418,7 @@ class MsalAuthManager(private val context: Context) {
     }
 
     private var app: ISingleAccountPublicClientApplication? = null
+    private var initErrorMessage: String? = null
 
     init {
         PublicClientApplication.createSingleAccountPublicClientApplication(
@@ -428,6 +430,7 @@ class MsalAuthManager(private val context: Context) {
                 }
 
                 override fun onError(exception: MsalException) {
+                    initErrorMessage = exception.message ?: "Failed to initialize MSAL."
                 }
             }
         )
@@ -435,7 +438,12 @@ class MsalAuthManager(private val context: Context) {
 
     fun signIn(activity: ComponentActivity, callback: AuthCallback) {
         val scopes = arrayOf(BuildConfig.API_SCOPE)
-        val currentApp = app ?: return
+        val currentApp = app
+        if (currentApp == null) {
+            val message = initErrorMessage ?: "MSAL is still initializing. Try again."
+            callback.onError(MsalClientException("app_not_ready", message))
+            return
+        }
         currentApp.signIn(activity, null, scopes, object : AuthenticationCallback {
             override fun onSuccess(authenticationResult: IAuthenticationResult) {
                 callback.onSuccess(authenticationResult)
