@@ -614,6 +614,7 @@ fun CompetencyDetailScreen(
 ) {
     val context = LocalContext.current
     var note by remember { mutableStateOf("") }
+    val scrollState = rememberScrollState()
 
     val cameraUriState = remember { mutableStateOf<Uri?>(null) }
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
@@ -643,7 +644,7 @@ fun CompetencyDetailScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp).verticalScroll(scrollState)) {
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -743,8 +744,8 @@ fun CompetencyDetailScreen(
         if (competency.evidence.isEmpty()) {
             Text("No evidence uploaded yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(competency.evidence) { evidence ->
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                competency.evidence.forEach { evidence ->
                     EvidenceCard(competency.id, evidence, accessToken, onDeleteEvidence)
                 }
             }
@@ -912,8 +913,10 @@ fun CompetencyEditScreen(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    IconButton(onClick = { pendingEvidence.removeAt(index) }) {
-                                        Icon(Icons.Outlined.Close, contentDescription = "Remove")
+                                    TextButton(onClick = { pendingEvidence.removeAt(index) }) {
+                                        Icon(Icons.Outlined.Close, contentDescription = null)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Remove")
                                     }
                                 }
                                 item.note?.let { note ->
@@ -1358,8 +1361,10 @@ fun EvidenceCard(competencyId: String, evidence: Evidence, accessToken: String?,
                     Text(evidence.note!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            IconButton(onClick = { onDeleteEvidence(evidence.id) }) {
-                Icon(Icons.Outlined.Delete, contentDescription = "Delete")
+            TextButton(onClick = { onDeleteEvidence(evidence.id) }) {
+                Icon(Icons.Outlined.Delete, contentDescription = null)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Delete")
             }
         }
     }
