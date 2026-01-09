@@ -92,8 +92,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardOptions
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -2064,8 +2062,7 @@ fun PracticeHoursScreen(entries: List<PracticeHour>, onAdd: (PracticeHourUpsertR
                     value = hours,
                     onValueChange = { hours = it },
                     label = { Text("Hours worked") },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (optional)") }, modifier = Modifier.fillMaxWidth())
                 if (!error.isNullOrBlank()) {
@@ -2086,7 +2083,7 @@ fun PracticeHoursScreen(entries: List<PracticeHour>, onAdd: (PracticeHourUpsertR
                                 localDateToDate(date!!),
                                 role.ifBlank { null },
                                 setting.ifBlank { null },
-                                hoursValue,
+                                hoursValue!!,
                                 notes.ifBlank { null }
                             )
                         )
@@ -2172,8 +2169,7 @@ fun CpdLogScreen(
                     value = hours,
                     onValueChange = { hours = it },
                     label = { Text("Hours") },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    modifier = Modifier.fillMaxWidth()
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = participatory, onCheckedChange = { participatory = it })
@@ -2198,7 +2194,7 @@ fun CpdLogScreen(
                             CpdEntryUpsertRequest(
                                 localDateToDate(date!!),
                                 topic.trim(),
-                                hoursValue,
+                                hoursValue!!,
                                 participatory,
                                 notes.ifBlank { null }
                             )
