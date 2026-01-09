@@ -1478,7 +1478,7 @@ fun ProfileScreen(profile: NurseProfile?, onSave: (NurseProfileUpdateRequest) ->
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(value = fullName, onValueChange = { fullName = it }, label = { Text("Full name") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = preferredName, onValueChange = { preferredName = it }, label = { Text("Preferred name") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = nmcPin, onValueChange = { nmcPin = it }, label = { Text("NMC PIN (confidential)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = nmcPin, onValueChange = { nmcPin = it }, label = { Text("NMC PIN (confidential, e.g. 99A9999A)") }, modifier = Modifier.fillMaxWidth())
                 Text(
                     "Your NMC PIN is stored securely and only shared if you explicitly include it in a share pack.",
                     style = MaterialTheme.typography.bodySmall,
@@ -1594,11 +1594,11 @@ fun ProfileScreen(profile: NurseProfile?, onSave: (NurseProfileUpdateRequest) ->
         Button(
             onClick = {
                 val pin = nmcPin.trim()
-                val pinValid = Regex("^[A-Za-z]{2}\\d{6}$").matches(pin)
+                val pinValid = Regex("^\\d{2}[A-Za-z]\\d{4}[A-Za-z]$").matches(pin)
                 error = when {
                     fullName.isBlank() -> "Full name is required."
                     registrationType.isBlank() -> "Select a registration type."
-                    !pinValid -> "NMC PIN must be 2 letters followed by 6 digits."
+                    !pinValid -> "NMC PIN must match the 99A9999A format."
                     else -> null
                 }
                 if (error == null) {

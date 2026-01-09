@@ -146,7 +146,7 @@ app.MapPut("/profile", async (AppDbContext db, ClaimsPrincipal user, NurseProfil
     var normalizedPin = NormalizeNmcPin(request.NmcPin);
     if (normalizedPin == string.Empty)
     {
-        return Results.BadRequest(new { message = "NMC PIN must be 2 letters followed by 6 digits." });
+        return Results.BadRequest(new { message = "NMC PIN must match the 99A9999A format." });
     }
 
     if (!IsValidRegistrationType(request.RegistrationType))
@@ -1342,7 +1342,7 @@ static string? NormalizeNmcPin(string? nmcPin)
     }
 
     var normalized = nmcPin.Trim().ToUpperInvariant();
-    return Regex.IsMatch(normalized, "^[A-Z]{2}\\d{6}$") ? normalized : string.Empty;
+    return Regex.IsMatch(normalized, "^\\d{2}[A-Z]\\d{4}[A-Z]$") ? normalized : string.Empty;
 }
 
 static long GetEvidenceMaxBytes(IConfiguration config)
