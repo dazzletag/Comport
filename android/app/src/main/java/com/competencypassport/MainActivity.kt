@@ -1869,12 +1869,12 @@ data class NurseProfileUpdateRequest(
     val roleBand: String?,
     val phone: String?,
     val bio: String?,
-    val pinExpiryDate: Date?,
-    val revalidationCycleStart: Date?,
-    val revalidationCycleEnd: Date?,
-    val pushNotificationsEnabled: Boolean,
-    val emailRemindersEnabled: Boolean,
-    val reminderCadence: String?
+    val pinExpiryDate: Date? = null,
+    val revalidationCycleStart: Date? = null,
+    val revalidationCycleEnd: Date? = null,
+    val pushNotificationsEnabled: Boolean = false,
+    val emailRemindersEnabled: Boolean = false,
+    val reminderCadence: String? = null
 )
 
 data class QuickLink(
