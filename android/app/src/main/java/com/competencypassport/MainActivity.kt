@@ -447,6 +447,17 @@ fun CompetencyPassportApp() {
                                                             Toast.makeText(context, errorMessage, Toast.LENGTH_SHORT).show()
                                                         }
                                                     }
+                                                },
+                                                onDeleteEvidence = { competencyId, evidenceId ->
+                                                    scope.launch {
+                                                        try {
+                                                            api.deleteEvidence(competencyId, evidenceId)
+                                                            selectedCompetency = api.getCompetency(competencyId)
+                                                        } catch (ex: Exception) {
+                                                            errorMessage = "Failed to delete evidence."
+                                                            Toast.makeText(context, errorMessage, Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
                                                 }
                                             )
                                         }
@@ -758,7 +769,8 @@ fun CompetencyEditScreen(
     initial: CompetencyDetail?,
     errorMessage: String?,
     onCancel: () -> Unit,
-    onSave: (String, String?, Date, Date, String, List<PendingEvidence>) -> Unit
+    onSave: (String, String?, Date, Date, String, List<PendingEvidence>) -> Unit,
+    onDeleteEvidence: (String, String) -> Unit
 ) {
     var title by remember { mutableStateOf(initial?.title ?: "") }
     var description by remember { mutableStateOf(initial?.description ?: "") }
@@ -921,6 +933,37 @@ fun CompetencyEditScreen(
                                 }
                                 item.note?.let { note ->
                                     Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+                if (initial != null && initial.evidence.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("Existing evidence", style = MaterialTheme.typography.titleSmall)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            initial.evidence.forEach { evidence ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        evidence.fileName,
+                                        modifier = Modifier.weight(1f),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    TextButton(onClick = { onDeleteEvidence(initial.id, evidence.id) }) {
+                                        Icon(Icons.Outlined.Delete, contentDescription = null)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Delete")
+                                    }
                                 }
                             }
                         }
