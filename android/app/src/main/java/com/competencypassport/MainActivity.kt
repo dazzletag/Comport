@@ -1885,35 +1885,41 @@ fun RevalidationDashboardScreen(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        SummaryProgressCard(
-            title = "Practice hours",
-            current = practiceHours.sumOf { it.hours },
-            target = summary?.practiceHoursTarget ?: 450.0,
-            detail = "Target 450 hours across three years"
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            SummaryProgressCard(
+                title = "Practice hours",
+                current = practiceHours.sumOf { it.hours },
+                target = summary?.practiceHoursTarget ?: 450.0,
+                detail = "Target 450 hours across three years",
+                modifier = Modifier.weight(1f)
+            )
+            SummaryProgressCard(
+                title = "CPD hours",
+                current = cpdEntries.sumOf { it.hours },
+                target = summary?.cpdTarget ?: 35.0,
+                detail = "At least 20 participatory hours",
+                secondaryCurrent = cpdEntries.filter { it.isParticipatory }.sumOf { it.hours },
+                secondaryLabel = "Participatory",
+                modifier = Modifier.weight(1f)
+            )
+        }
         Spacer(modifier = Modifier.height(12.dp))
-        SummaryProgressCard(
-            title = "CPD hours",
-            current = cpdEntries.sumOf { it.hours },
-            target = summary?.cpdTarget ?: 35.0,
-            detail = "At least 20 participatory hours",
-            secondaryCurrent = cpdEntries.filter { it.isParticipatory }.sumOf { it.hours },
-            secondaryLabel = "Participatory"
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        SummaryCountCard(
-            title = "Practice feedback",
-            count = feedbackEntries.size,
-            target = summary?.feedbackTarget ?: 5,
-            detail = "Five practice-related feedback items"
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        SummaryCountCard(
-            title = "Reflective accounts",
-            count = reflectionEntries.size,
-            target = summary?.reflectionTarget ?: 5,
-            detail = "Five reflective accounts mapped to the Code"
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            SummaryCountCard(
+                title = "Practice feedback",
+                count = feedbackEntries.size,
+                target = summary?.feedbackTarget ?: 5,
+                detail = "Five practice-related feedback items",
+                modifier = Modifier.weight(1f)
+            )
+            SummaryCountCard(
+                title = "Reflective accounts",
+                count = reflectionEntries.size,
+                target = summary?.reflectionTarget ?: 5,
+                detail = "Five reflective accounts mapped to the Code",
+                modifier = Modifier.weight(1f)
+            )
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -1923,37 +1929,43 @@ fun RevalidationDashboardScreen(
             title = "Practice hours",
             subtitle = "Log shifts and total hours",
             trailing = "${practiceHours.sumOf { it.hours }.toInt()}h",
-            onClick = { onNavigate(RevalidationScreen.PracticeHours) }
+            onClick = { onNavigate(RevalidationScreen.PracticeHours) },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
         ModuleNavCard(
             title = "CPD log",
             subtitle = "Structured learning and evidence",
             trailing = "${cpdEntries.size} entries",
-            onClick = { onNavigate(RevalidationScreen.CpdLog) }
+            onClick = { onNavigate(RevalidationScreen.CpdLog) },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
         ModuleNavCard(
             title = "Practice feedback",
             subtitle = "Compliments, audits, peer feedback",
             trailing = "${feedbackEntries.size} items",
-            onClick = { onNavigate(RevalidationScreen.Feedback) }
+            onClick = { onNavigate(RevalidationScreen.Feedback) },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
         ModuleNavCard(
             title = "Reflective accounts",
             subtitle = "Map learning to the NMC Code",
             trailing = "${reflectionEntries.size} entries",
-            onClick = { onNavigate(RevalidationScreen.Reflections) }
+            onClick = { onNavigate(RevalidationScreen.Reflections) },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
         ModuleNavCard(
             title = "Discussions",
             subtitle = "Reflective & confirmation discussion",
             trailing = "Complete",
-            onClick = { onNavigate(RevalidationScreen.Discussions) }
+            onClick = { onNavigate(RevalidationScreen.Discussions) },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
         ModuleNavCard(
             title = "Declarations",
             subtitle = "Health & character + indemnity",
             trailing = "Review",
-            onClick = { onNavigate(RevalidationScreen.Declarations) }
+            onClick = { onNavigate(RevalidationScreen.Declarations) },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
         Spacer(modifier = Modifier.height(24.dp))
     }
@@ -1966,10 +1978,12 @@ fun SummaryProgressCard(
     target: Double,
     detail: String,
     secondaryCurrent: Double? = null,
-    secondaryLabel: String? = null
+    secondaryLabel: String? = null,
+    modifier: Modifier = Modifier
 ) {
     val progress = if (target > 0) (current / target).coerceIn(0.0, 1.0).toFloat() else 0f
     Card(
+        modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
@@ -1989,9 +2003,10 @@ fun SummaryProgressCard(
 }
 
 @Composable
-fun SummaryCountCard(title: String, count: Int, target: Int, detail: String) {
+fun SummaryCountCard(title: String, count: Int, target: Int, detail: String, modifier: Modifier = Modifier) {
     val progress = if (target > 0) (count.toFloat() / target).coerceIn(0f, 1f) else 0f
     Card(
+        modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
@@ -2007,13 +2022,19 @@ fun SummaryCountCard(title: String, count: Int, target: Int, detail: String) {
 }
 
 @Composable
-fun ModuleNavCard(title: String, subtitle: String, trailing: String, onClick: () -> Unit) {
+fun ModuleNavCard(
+    title: String,
+    subtitle: String,
+    trailing: String,
+    onClick: () -> Unit,
+    containerColor: Color = MaterialTheme.colorScheme.surface
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 10.dp)
             .clickable { onClick() },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(
