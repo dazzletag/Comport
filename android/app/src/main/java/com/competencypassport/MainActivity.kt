@@ -20,6 +20,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -91,6 +92,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -176,6 +179,15 @@ fun CompetencyPassportApp() {
     var profile by remember { mutableStateOf<NurseProfile?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isUploading by remember { mutableStateOf(false) }
+    var revalidationScreen by remember { mutableStateOf(RevalidationScreen.Dashboard) }
+    var revalidationSummary by remember { mutableStateOf<RevalidationSummary?>(null) }
+    var practiceHours by remember { mutableStateOf<List<PracticeHour>>(emptyList()) }
+    var cpdEntries by remember { mutableStateOf<List<CpdEntry>>(emptyList()) }
+    var feedbackEntries by remember { mutableStateOf<List<FeedbackEntry>>(emptyList()) }
+    var reflectionEntries by remember { mutableStateOf<List<ReflectionEntry>>(emptyList()) }
+    var discussion by remember { mutableStateOf<Discussion?>(null) }
+    var declarations by remember { mutableStateOf<Declaration?>(null) }
+    var isExporting by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
 
@@ -199,6 +211,24 @@ fun CompetencyPassportApp() {
                 profile = api.getProfile()
             } catch (ex: Exception) {
                 errorMessage = "Failed to load profile."
+            }
+        }
+    }
+
+    fun loadRevalidationData() {
+        scope.launch {
+            errorMessage = null
+            try {
+                refreshTokenIfNeeded(authManager, tokenStore)?.let { tokenStore.save(it) }
+                revalidationSummary = api.getRevalidationSummary()
+                practiceHours = api.getPracticeHours()
+                cpdEntries = api.getCpdEntries()
+                feedbackEntries = api.getFeedbackEntries()
+                reflectionEntries = api.getReflections()
+                discussion = api.getDiscussion()
+                declarations = api.getDeclarations()
+            } catch (ex: Exception) {
+                errorMessage = "Failed to load revalidation data."
             }
         }
     }
@@ -246,6 +276,16 @@ fun CompetencyPassportApp() {
                             PassportScreen.Edit -> "Record Update"
                             PassportScreen.Share -> "Share Pack"
                         }
+                        MainTab.Revalidation -> when (revalidationScreen) {
+                            RevalidationScreen.Dashboard -> "Revalidation"
+                            RevalidationScreen.PracticeHours -> "Practice hours"
+                            RevalidationScreen.CpdLog -> "CPD log"
+                            RevalidationScreen.Feedback -> "Practice feedback"
+                            RevalidationScreen.Reflections -> "Reflective accounts"
+                            RevalidationScreen.Discussions -> "Discussions"
+                            RevalidationScreen.Declarations -> "Declarations"
+                            RevalidationScreen.Export -> "Evidence pack"
+                        }
                         MainTab.Profile -> "Professional Profile"
                         MainTab.References -> "Quick References"
                     }
@@ -254,11 +294,18 @@ fun CompetencyPassportApp() {
                         topBar = {
                             TopAppBar(
                                 title = { Text(topBarTitle) },
-                                navigationIcon = if (activeTab == MainTab.Passport && passportScreen != PassportScreen.List) {
+                                navigationIcon = if (
+                                    (activeTab == MainTab.Passport && passportScreen != PassportScreen.List) ||
+                                    (activeTab == MainTab.Revalidation && revalidationScreen != RevalidationScreen.Dashboard)
+                                ) {
                                     {
                                         IconButton(onClick = {
-                                            passportScreen = PassportScreen.List
-                                            loadCompetencies()
+                                            if (activeTab == MainTab.Passport) {
+                                                passportScreen = PassportScreen.List
+                                                loadCompetencies()
+                                            } else {
+                                                revalidationScreen = RevalidationScreen.Dashboard
+                                            }
                                         }) {
                                             Icon(Icons.Outlined.ArrowBack, contentDescription = "Back")
                                         }
@@ -288,6 +335,16 @@ fun CompetencyPassportApp() {
                                     },
                                     icon = { Icon(Icons.Outlined.Assignment, contentDescription = "Passport") },
                                     label = { Text("Passport") }
+                                )
+                                NavigationBarItem(
+                                    selected = activeTab == MainTab.Revalidation,
+                                    onClick = {
+                                        activeTab = MainTab.Revalidation
+                                        revalidationScreen = RevalidationScreen.Dashboard
+                                        loadRevalidationData()
+                                    },
+                                    icon = { Icon(Icons.Outlined.CheckCircle, contentDescription = "Revalidation") },
+                                    label = { Text("Revalidation") }
                                 )
                                 NavigationBarItem(
                                     selected = activeTab == MainTab.Profile,
@@ -482,6 +539,186 @@ fun CompetencyPassportApp() {
                                         }
                                     }
                                 }
+                                MainTab.Revalidation -> {
+                                    RevalidationHost(
+                                        summary = revalidationSummary,
+                                        practiceHours = practiceHours,
+                                        cpdEntries = cpdEntries,
+                                        feedbackEntries = feedbackEntries,
+                                        reflectionEntries = reflectionEntries,
+                                        discussion = discussion,
+                                        declarations = declarations,
+                                        isExporting = isExporting,
+                                        onRefresh = { loadRevalidationData() },
+                                        onNavigate = { revalidationScreen = it },
+                                        currentScreen = revalidationScreen,
+                                        onAddPracticeHour = { request ->
+                                            scope.launch {
+                                                try {
+                                                    api.createPracticeHour(request)
+                                                    practiceHours = api.getPracticeHours()
+                                                    revalidationSummary = api.getRevalidationSummary()
+                                                } catch (ex: Exception) {
+                                                    errorMessage = "Failed to add practice hours."
+                                                }
+                                            }
+                                        },
+                                        onDeletePracticeHour = { id ->
+                                            scope.launch {
+                                                try {
+                                                    api.deletePracticeHour(id)
+                                                    practiceHours = api.getPracticeHours()
+                                                    revalidationSummary = api.getRevalidationSummary()
+                                                } catch (ex: Exception) {
+                                                    errorMessage = "Failed to delete practice hours."
+                                                }
+                                            }
+                                        },
+                                        onAddCpd = { request ->
+                                            scope.launch {
+                                                try {
+                                                    api.createCpdEntry(request)
+                                                    cpdEntries = api.getCpdEntries()
+                                                    revalidationSummary = api.getRevalidationSummary()
+                                                } catch (ex: Exception) {
+                                                    errorMessage = "Failed to add CPD entry."
+                                                }
+                                            }
+                                        },
+                                        onDeleteCpd = { id ->
+                                            scope.launch {
+                                                try {
+                                                    api.deleteCpdEntry(id)
+                                                    cpdEntries = api.getCpdEntries()
+                                                    revalidationSummary = api.getRevalidationSummary()
+                                                } catch (ex: Exception) {
+                                                    errorMessage = "Failed to delete CPD entry."
+                                                }
+                                            }
+                                        },
+                                        onUploadCpdEvidence = { id, uri ->
+                                            scope.launch {
+                                                try {
+                                                    val filePart = createMultipartFromUri(context, uri)
+                                                    api.uploadCpdEvidence(id, filePart)
+                                                    cpdEntries = api.getCpdEntries()
+                                                } catch (ex: Exception) {
+                                                    errorMessage = "Failed to upload CPD evidence."
+                                                }
+                                            }
+                                        },
+                                        onDeleteCpdEvidence = { id ->
+                                            scope.launch {
+                                                try {
+                                                    api.deleteCpdEvidence(id)
+                                                    cpdEntries = api.getCpdEntries()
+                                                } catch (ex: Exception) {
+                                                    errorMessage = "Failed to remove CPD evidence."
+                                                }
+                                            }
+                                        },
+                                        onAddFeedback = { request ->
+                                            scope.launch {
+                                                try {
+                                                    api.createFeedback(request)
+                                                    feedbackEntries = api.getFeedbackEntries()
+                                                    revalidationSummary = api.getRevalidationSummary()
+                                                } catch (ex: Exception) {
+                                                    errorMessage = "Failed to add feedback."
+                                                }
+                                            }
+                                        },
+                                        onDeleteFeedback = { id ->
+                                            scope.launch {
+                                                try {
+                                                    api.deleteFeedback(id)
+                                                    feedbackEntries = api.getFeedbackEntries()
+                                                    revalidationSummary = api.getRevalidationSummary()
+                                                } catch (ex: Exception) {
+                                                    errorMessage = "Failed to delete feedback."
+                                                }
+                                            }
+                                        },
+                                        onUploadFeedbackEvidence = { id, uri ->
+                                            scope.launch {
+                                                try {
+                                                    val filePart = createMultipartFromUri(context, uri)
+                                                    api.uploadFeedbackEvidence(id, filePart)
+                                                    feedbackEntries = api.getFeedbackEntries()
+                                                } catch (ex: Exception) {
+                                                    errorMessage = "Failed to upload feedback evidence."
+                                                }
+                                            }
+                                        },
+                                        onDeleteFeedbackEvidence = { id ->
+                                            scope.launch {
+                                                try {
+                                                    api.deleteFeedbackEvidence(id)
+                                                    feedbackEntries = api.getFeedbackEntries()
+                                                } catch (ex: Exception) {
+                                                    errorMessage = "Failed to remove feedback evidence."
+                                                }
+                                            }
+                                        },
+                                        onAddReflection = { request ->
+                                            scope.launch {
+                                                try {
+                                                    api.createReflection(request)
+                                                    reflectionEntries = api.getReflections()
+                                                    revalidationSummary = api.getRevalidationSummary()
+                                                } catch (ex: Exception) {
+                                                    errorMessage = "Failed to add reflection."
+                                                }
+                                            }
+                                        },
+                                        onDeleteReflection = { id ->
+                                            scope.launch {
+                                                try {
+                                                    api.deleteReflection(id)
+                                                    reflectionEntries = api.getReflections()
+                                                    revalidationSummary = api.getRevalidationSummary()
+                                                } catch (ex: Exception) {
+                                                    errorMessage = "Failed to delete reflection."
+                                                }
+                                            }
+                                        },
+                                        onSaveDiscussion = { request ->
+                                            scope.launch {
+                                                try {
+                                                    discussion = api.updateDiscussion(request)
+                                                } catch (ex: Exception) {
+                                                    errorMessage = "Failed to save discussion."
+                                                }
+                                            }
+                                        },
+                                        onSaveDeclarations = { request ->
+                                            scope.launch {
+                                                try {
+                                                    declarations = api.updateDeclarations(request)
+                                                } catch (ex: Exception) {
+                                                    errorMessage = "Failed to save declarations."
+                                                }
+                                            }
+                                        },
+                                        onExportPack = { uri ->
+                                            scope.launch {
+                                                isExporting = true
+                                                try {
+                                                    val body = api.downloadRevalidationPack()
+                                                    context.contentResolver.openOutputStream(uri)?.use { output ->
+                                                        body.byteStream().use { input ->
+                                                            input.copyTo(output)
+                                                        }
+                                                    }
+                                                } catch (ex: Exception) {
+                                                    errorMessage = "Failed to generate evidence pack."
+                                                } finally {
+                                                    isExporting = false
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
                                 MainTab.Profile -> {
                                     ProfileScreen(
                                         profile = profile,
@@ -516,8 +753,20 @@ enum class AppScreen {
 
 enum class MainTab {
     Passport,
+    Revalidation,
     Profile,
     References
+}
+
+enum class RevalidationScreen {
+    Dashboard,
+    PracticeHours,
+    CpdLog,
+    Feedback,
+    Reflections,
+    Discussions,
+    Declarations,
+    Export
 }
 
 enum class PassportScreen {
@@ -1211,6 +1460,12 @@ fun ProfileScreen(profile: NurseProfile?, onSave: (NurseProfileUpdateRequest) ->
     var roleBand by remember(profile) { mutableStateOf(profile?.roleBand ?: "") }
     var phone by remember(profile) { mutableStateOf(profile?.phone ?: "") }
     var bio by remember(profile) { mutableStateOf(profile?.bio ?: "") }
+    var pinExpiryDate by remember(profile) { mutableStateOf(parseLocalDate(profile?.pinExpiryDate)) }
+    var revalidationStart by remember(profile) { mutableStateOf(parseLocalDate(profile?.revalidationCycleStart)) }
+    var revalidationEnd by remember(profile) { mutableStateOf(parseLocalDate(profile?.revalidationCycleEnd)) }
+    var pushEnabled by remember(profile) { mutableStateOf(profile?.pushNotificationsEnabled ?: false) }
+    var emailEnabled by remember(profile) { mutableStateOf(profile?.emailRemindersEnabled ?: false) }
+    var reminderCadence by remember(profile) { mutableStateOf(profile?.reminderCadence ?: "Quarterly") }
     val email = profile?.email ?: ""
     var error by remember { mutableStateOf<String?>(null) }
     val scrollState = rememberScrollState()
@@ -1279,6 +1534,60 @@ fun ProfileScreen(profile: NurseProfile?, onSave: (NurseProfileUpdateRequest) ->
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Revalidation cycle", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(12.dp))
+                DatePickerField(label = "PIN expiry / revalidation due date", date = pinExpiryDate, onDateSelected = { pinExpiryDate = it })
+                DatePickerField(label = "Cycle start date", date = revalidationStart, onDateSelected = { revalidationStart = it })
+                DatePickerField(label = "Cycle end date", date = revalidationEnd, onDateSelected = { revalidationEnd = it })
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Reminders", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = pushEnabled, onCheckedChange = { pushEnabled = it })
+                    Text("Push notifications")
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = emailEnabled, onCheckedChange = { emailEnabled = it })
+                    Text("Email reminders")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Reminder cadence", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Quarterly", "Monthly").forEach { option ->
+                        AssistChip(
+                            onClick = { reminderCadence = option },
+                            label = { Text(option) },
+                            colors = if (reminderCadence == option) {
+                                AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                            } else {
+                                AssistChipDefaults.assistChipColors()
+                            }
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("90/60/30 days").forEach { option ->
+                        AssistChip(
+                            onClick = { reminderCadence = option },
+                            label = { Text(option) },
+                            colors = if (reminderCadence == option) {
+                                AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                            } else {
+                                AssistChipDefaults.assistChipColors()
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         if (!error.isNullOrBlank()) {
             Text(error!!, color = MaterialTheme.colorScheme.error)
             Spacer(modifier = Modifier.height(8.dp))
@@ -1304,7 +1613,13 @@ fun ProfileScreen(profile: NurseProfile?, onSave: (NurseProfileUpdateRequest) ->
                             employer.ifBlank { null },
                             roleBand.ifBlank { null },
                             phone.ifBlank { null },
-                            bio.ifBlank { null }
+                            bio.ifBlank { null },
+                            pinExpiryDate?.let { localDateToDate(it) },
+                            revalidationStart?.let { localDateToDate(it) },
+                            revalidationEnd?.let { localDateToDate(it) },
+                            pushEnabled,
+                            emailEnabled,
+                            reminderCadence.ifBlank { null }
                         )
                     )
                 }
@@ -1321,7 +1636,7 @@ fun ReferenceScreen() {
     val context = LocalContext.current
     val links = listOf(
         QuickLink("NMC Code", "Professional standards of practice and behaviour.", "https://www.nmc.org.uk/standards/code/"),
-        QuickLink("NMC Revalidation", "Guidance for five-year revalidation cycles.", "https://www.nmc.org.uk/revalidation/"),
+        QuickLink("NMC Revalidation", "Guidance for three-year revalidation cycles.", "https://www.nmc.org.uk/revalidation/"),
         QuickLink("NICE Guidance", "Clinical guidelines and evidence summaries.", "https://www.nice.org.uk/guidance"),
         QuickLink("NHS England", "National policy updates and operational guidance.", "https://www.england.nhs.uk/"),
         QuickLink("BNF / Medicines", "Medicines guidance and prescribing information.", "https://bnf.nice.org.uk/"),
@@ -1355,6 +1670,995 @@ fun ReferenceScreen() {
                             Icon(Icons.Outlined.Link, contentDescription = "Open")
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RevalidationHost(
+    summary: RevalidationSummary?,
+    practiceHours: List<PracticeHour>,
+    cpdEntries: List<CpdEntry>,
+    feedbackEntries: List<FeedbackEntry>,
+    reflectionEntries: List<ReflectionEntry>,
+    discussion: Discussion?,
+    declarations: Declaration?,
+    isExporting: Boolean,
+    onRefresh: () -> Unit,
+    onNavigate: (RevalidationScreen) -> Unit,
+    currentScreen: RevalidationScreen,
+    onAddPracticeHour: (PracticeHourUpsertRequest) -> Unit,
+    onDeletePracticeHour: (String) -> Unit,
+    onAddCpd: (CpdEntryUpsertRequest) -> Unit,
+    onDeleteCpd: (String) -> Unit,
+    onUploadCpdEvidence: (String, Uri) -> Unit,
+    onDeleteCpdEvidence: (String) -> Unit,
+    onAddFeedback: (FeedbackUpsertRequest) -> Unit,
+    onDeleteFeedback: (String) -> Unit,
+    onUploadFeedbackEvidence: (String, Uri) -> Unit,
+    onDeleteFeedbackEvidence: (String) -> Unit,
+    onAddReflection: (ReflectionUpsertRequest) -> Unit,
+    onDeleteReflection: (String) -> Unit,
+    onSaveDiscussion: (DiscussionUpdateRequest) -> Unit,
+    onSaveDeclarations: (DeclarationUpdateRequest) -> Unit,
+    onExportPack: (Uri) -> Unit
+) {
+    var pendingCpdEvidenceId by remember { mutableStateOf<String?>(null) }
+    var pendingFeedbackEvidenceId by remember { mutableStateOf<String?>(null) }
+
+    val cpdEvidenceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val targetId = pendingCpdEvidenceId
+        if (uri != null && targetId != null) {
+            onUploadCpdEvidence(targetId, uri)
+        }
+        pendingCpdEvidenceId = null
+    }
+    val feedbackEvidenceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val targetId = pendingFeedbackEvidenceId
+        if (uri != null && targetId != null) {
+            onUploadFeedbackEvidence(targetId, uri)
+        }
+        pendingFeedbackEvidenceId = null
+    }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) {
+            onExportPack(uri)
+        }
+    }
+
+    when (currentScreen) {
+        RevalidationScreen.Dashboard -> {
+            RevalidationDashboardScreen(
+                summary = summary,
+                practiceHours = practiceHours,
+                cpdEntries = cpdEntries,
+                feedbackEntries = feedbackEntries,
+                reflectionEntries = reflectionEntries,
+                onNavigate = onNavigate,
+                onRefresh = onRefresh
+            )
+        }
+        RevalidationScreen.PracticeHours -> {
+            PracticeHoursScreen(
+                entries = practiceHours,
+                onAdd = onAddPracticeHour,
+                onDelete = onDeletePracticeHour
+            )
+        }
+        RevalidationScreen.CpdLog -> {
+            CpdLogScreen(
+                entries = cpdEntries,
+                onAdd = onAddCpd,
+                onDelete = onDeleteCpd,
+                onUploadEvidence = { id ->
+                    pendingCpdEvidenceId = id
+                    cpdEvidenceLauncher.launch(
+                        arrayOf(
+                            "image/*",
+                            "application/pdf",
+                            "application/msword",
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        )
+                    )
+                },
+                onDeleteEvidence = onDeleteCpdEvidence
+            )
+        }
+        RevalidationScreen.Feedback -> {
+            FeedbackScreen(
+                entries = feedbackEntries,
+                onAdd = onAddFeedback,
+                onDelete = onDeleteFeedback,
+                onUploadEvidence = { id ->
+                    pendingFeedbackEvidenceId = id
+                    feedbackEvidenceLauncher.launch(
+                        arrayOf(
+                            "image/*",
+                            "application/pdf",
+                            "application/msword",
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        )
+                    )
+                },
+                onDeleteEvidence = onDeleteFeedbackEvidence
+            )
+        }
+        RevalidationScreen.Reflections -> {
+            ReflectionScreen(
+                entries = reflectionEntries,
+                onAdd = onAddReflection,
+                onDelete = onDeleteReflection
+            )
+        }
+        RevalidationScreen.Discussions -> {
+            DiscussionScreen(
+                discussion = discussion,
+                onSave = onSaveDiscussion
+            )
+        }
+        RevalidationScreen.Declarations -> {
+            DeclarationScreen(
+                declaration = declarations,
+                onSave = onSaveDeclarations
+            )
+        }
+        RevalidationScreen.Export -> {
+            EvidencePackScreen(
+                isExporting = isExporting,
+                onGenerate = {
+                    val fileName = "revalidation_pack_${LocalDate.now(ZoneOffset.UTC)}.zip"
+                    exportLauncher.launch(fileName)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun RevalidationDashboardScreen(
+    summary: RevalidationSummary?,
+    practiceHours: List<PracticeHour>,
+    cpdEntries: List<CpdEntry>,
+    feedbackEntries: List<FeedbackEntry>,
+    reflectionEntries: List<ReflectionEntry>,
+    onNavigate: (RevalidationScreen) -> Unit,
+    onRefresh: () -> Unit
+) {
+    val scrollState = rememberScrollState()
+    val expiryDate = parseLocalDate(summary?.pinExpiryDate)
+    val daysRemaining = expiryDate?.let { ChronoUnit.DAYS.between(LocalDate.now(ZoneOffset.UTC), it) }
+
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp).verticalScroll(scrollState)) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Revalidation overview", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    expiryDate?.let { "PIN expiry ${formatLocalDate(it)}" } ?: "PIN expiry date not set",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                daysRemaining?.let {
+                    val status = when {
+                        it < 0 -> "Overdue"
+                        it <= 30 -> "Due in $it days"
+                        it <= 180 -> "Due in ${it / 30} months"
+                        else -> "Due in ${it / 30} months"
+                    }
+                    Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                summary?.cycleStart?.let {
+                    Text("Cycle: ${formatDate(it)} to ${formatDate(summary.cycleEnd ?: it)}", style = MaterialTheme.typography.bodySmall)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AssistChip(
+                        onClick = onRefresh,
+                        label = { Text("Refresh data") }
+                    )
+                    AssistChip(
+                        onClick = { onNavigate(RevalidationScreen.Export) },
+                        label = { Text("Generate pack") }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (summary?.atRisk == true) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Outlined.WarningAmber, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("You may be at risk of missing requirements. Review your CPD and reflections.", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        SummaryProgressCard(
+            title = "Practice hours",
+            current = practiceHours.sumOf { it.hours },
+            target = summary?.practiceHoursTarget ?: 450.0,
+            detail = "Target 450 hours across three years"
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        SummaryProgressCard(
+            title = "CPD hours",
+            current = cpdEntries.sumOf { it.hours },
+            target = summary?.cpdTarget ?: 35.0,
+            detail = "At least 20 participatory hours",
+            secondaryCurrent = cpdEntries.filter { it.isParticipatory }.sumOf { it.hours },
+            secondaryLabel = "Participatory"
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        SummaryCountCard(
+            title = "Practice feedback",
+            count = feedbackEntries.size,
+            target = summary?.feedbackTarget ?: 5,
+            detail = "Five practice-related feedback items"
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        SummaryCountCard(
+            title = "Reflective accounts",
+            count = reflectionEntries.size,
+            target = summary?.reflectionTarget ?: 5,
+            detail = "Five reflective accounts mapped to the Code"
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text("Evidence modules", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(12.dp))
+        ModuleNavCard(
+            title = "Practice hours",
+            subtitle = "Log shifts and total hours",
+            trailing = "${practiceHours.sumOf { it.hours }.toInt()}h",
+            onClick = { onNavigate(RevalidationScreen.PracticeHours) }
+        )
+        ModuleNavCard(
+            title = "CPD log",
+            subtitle = "Structured learning and evidence",
+            trailing = "${cpdEntries.size} entries",
+            onClick = { onNavigate(RevalidationScreen.CpdLog) }
+        )
+        ModuleNavCard(
+            title = "Practice feedback",
+            subtitle = "Compliments, audits, peer feedback",
+            trailing = "${feedbackEntries.size} items",
+            onClick = { onNavigate(RevalidationScreen.Feedback) }
+        )
+        ModuleNavCard(
+            title = "Reflective accounts",
+            subtitle = "Map learning to the NMC Code",
+            trailing = "${reflectionEntries.size} entries",
+            onClick = { onNavigate(RevalidationScreen.Reflections) }
+        )
+        ModuleNavCard(
+            title = "Discussions",
+            subtitle = "Reflective & confirmation discussion",
+            trailing = "Complete",
+            onClick = { onNavigate(RevalidationScreen.Discussions) }
+        )
+        ModuleNavCard(
+            title = "Declarations",
+            subtitle = "Health & character + indemnity",
+            trailing = "Review",
+            onClick = { onNavigate(RevalidationScreen.Declarations) }
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+@Composable
+fun SummaryProgressCard(
+    title: String,
+    current: Double,
+    target: Double,
+    detail: String,
+    secondaryCurrent: Double? = null,
+    secondaryLabel: String? = null
+) {
+    val progress = if (target > 0) (current / target).coerceIn(0.0, 1.0).toFloat() else 0f
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("${current.toInt()} / ${target.toInt()} hours", style = MaterialTheme.typography.bodyMedium)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(8.dp))
+            LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
+            if (secondaryCurrent != null && secondaryLabel != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text("$secondaryLabel: ${secondaryCurrent.toInt()}h", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
+fun SummaryCountCard(title: String, count: Int, target: Int, detail: String) {
+    val progress = if (target > 0) (count.toFloat() / target).coerceIn(0f, 1f) else 0f
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("$count / $target complete", style = MaterialTheme.typography.bodyMedium)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(8.dp))
+            LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
+@Composable
+fun ModuleNavCard(title: String, subtitle: String, trailing: String, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 10.dp)
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text(trailing, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+fun PracticeHoursScreen(entries: List<PracticeHour>, onAdd: (PracticeHourUpsertRequest) -> Unit, onDelete: (String) -> Unit) {
+    var date by remember { mutableStateOf<LocalDate?>(null) }
+    var role by remember { mutableStateOf("") }
+    var setting by remember { mutableStateOf("") }
+    var hours by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scrollState = rememberScrollState()
+    val totalHours = entries.sumOf { it.hours }
+
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp).verticalScroll(scrollState)) {
+        SummaryProgressCard(
+            title = "Practice hours",
+            current = totalHours,
+            target = 450.0,
+            detail = "Log practice hours towards your 450 requirement"
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Add hours", style = MaterialTheme.typography.titleSmall)
+                DatePickerField(label = "Date", date = date, onDateSelected = { date = it })
+                OutlinedTextField(value = role, onValueChange = { role = it }, label = { Text("Role / band") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = setting, onValueChange = { setting = it }, label = { Text("Setting") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = hours,
+                    onValueChange = { hours = it },
+                    label = { Text("Hours worked") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+                OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (optional)") }, modifier = Modifier.fillMaxWidth())
+                if (!error.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(error!!, color = MaterialTheme.colorScheme.error)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(onClick = {
+                    val hoursValue = hours.toDoubleOrNull()
+                    error = when {
+                        date == null -> "Select a date."
+                        hoursValue == null || hoursValue <= 0 -> "Enter valid hours."
+                        else -> null
+                    }
+                    if (error == null) {
+                        onAdd(
+                            PracticeHourUpsertRequest(
+                                localDateToDate(date!!),
+                                role.ifBlank { null },
+                                setting.ifBlank { null },
+                                hoursValue,
+                                notes.ifBlank { null }
+                            )
+                        )
+                        date = null
+                        role = ""
+                        setting = ""
+                        hours = ""
+                        notes = ""
+                    }
+                }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Add hours")
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Logged hours", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(12.dp))
+        entries.sortedByDescending { parseLocalDate(it.date) ?: LocalDate.MIN }.forEach { entry ->
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                modifier = Modifier.padding(bottom = 10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(formatDate(entry.date), style = MaterialTheme.typography.bodyMedium)
+                        Text("${entry.hours} hours", style = MaterialTheme.typography.bodySmall)
+                        listOfNotNull(entry.role, entry.setting).takeIf { it.isNotEmpty() }?.let {
+                            Text(it.joinToString(" • "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        entry.notes?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                    IconButton(onClick = { onDelete(entry.id) }) {
+                        Icon(Icons.Outlined.Delete, contentDescription = "Delete")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CpdLogScreen(
+    entries: List<CpdEntry>,
+    onAdd: (CpdEntryUpsertRequest) -> Unit,
+    onDelete: (String) -> Unit,
+    onUploadEvidence: (String) -> Unit,
+    onDeleteEvidence: (String) -> Unit
+) {
+    var date by remember { mutableStateOf<LocalDate?>(null) }
+    var topic by remember { mutableStateOf("") }
+    var hours by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+    var participatory by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scrollState = rememberScrollState()
+    val totalHours = entries.sumOf { it.hours }
+    val totalParticipatory = entries.filter { it.isParticipatory }.sumOf { it.hours }
+
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp).verticalScroll(scrollState)) {
+        SummaryProgressCard(
+            title = "CPD hours",
+            current = totalHours,
+            target = 35.0,
+            detail = "Minimum 20 participatory hours",
+            secondaryCurrent = totalParticipatory,
+            secondaryLabel = "Participatory"
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Add CPD entry", style = MaterialTheme.typography.titleSmall)
+                DatePickerField(label = "Date", date = date, onDateSelected = { date = it })
+                OutlinedTextField(value = topic, onValueChange = { topic = it }, label = { Text("Topic") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = hours,
+                    onValueChange = { hours = it },
+                    label = { Text("Hours") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = participatory, onCheckedChange = { participatory = it })
+                    Text("Participatory learning")
+                }
+                OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes (optional)") }, modifier = Modifier.fillMaxWidth())
+                if (!error.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(error!!, color = MaterialTheme.colorScheme.error)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(onClick = {
+                    val hoursValue = hours.toDoubleOrNull()
+                    error = when {
+                        date == null -> "Select a date."
+                        topic.isBlank() -> "Enter a topic."
+                        hoursValue == null || hoursValue <= 0 -> "Enter valid hours."
+                        else -> null
+                    }
+                    if (error == null) {
+                        onAdd(
+                            CpdEntryUpsertRequest(
+                                localDateToDate(date!!),
+                                topic.trim(),
+                                hoursValue,
+                                participatory,
+                                notes.ifBlank { null }
+                            )
+                        )
+                        date = null
+                        topic = ""
+                        hours = ""
+                        notes = ""
+                        participatory = false
+                    }
+                }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Add CPD entry")
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Logged CPD", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(12.dp))
+        entries.sortedByDescending { parseLocalDate(it.date) ?: LocalDate.MIN }.forEach { entry ->
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                modifier = Modifier.padding(bottom = 10.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(entry.topic, style = MaterialTheme.typography.bodyMedium)
+                            Text("${formatDate(entry.date)} • ${entry.hours}h", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (entry.isParticipatory) {
+                            AssistChip(onClick = {}, label = { Text("Participatory") })
+                        }
+                    }
+                    entry.notes?.let {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (entry.evidenceFileName != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(entry.evidenceFileName, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                entry.evidenceUploadedAt?.let { Text("Uploaded ${formatDate(it)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            }
+                            OutlinedButton(onClick = { onDeleteEvidence(entry.id) }) {
+                                Text("Remove")
+                            }
+                        }
+                    } else {
+                        OutlinedButton(onClick = { onUploadEvidence(entry.id) }) {
+                            Icon(Icons.Outlined.FolderOpen, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Upload evidence")
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                        IconButton(onClick = { onDelete(entry.id) }) {
+                            Icon(Icons.Outlined.Delete, contentDescription = "Delete")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun FeedbackScreen(
+    entries: List<FeedbackEntry>,
+    onAdd: (FeedbackUpsertRequest) -> Unit,
+    onDelete: (String) -> Unit,
+    onUploadEvidence: (String) -> Unit,
+    onDeleteEvidence: (String) -> Unit
+) {
+    var date by remember { mutableStateOf<LocalDate?>(null) }
+    var source by remember { mutableStateOf("") }
+    var summary by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scrollState = rememberScrollState()
+    val sources = listOf("Patient", "Colleague", "Audit", "Complaint", "Compliment")
+
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp).verticalScroll(scrollState)) {
+        SummaryCountCard(
+            title = "Practice feedback",
+            count = entries.size,
+            target = 5,
+            detail = "Capture five practice-related feedback entries"
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Add feedback", style = MaterialTheme.typography.titleSmall)
+                DatePickerField(label = "Date", date = date, onDateSelected = { date = it })
+                Text("Source", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    sources.take(3).forEach { option ->
+                        AssistChip(
+                            onClick = { source = option },
+                            label = { Text(option) },
+                            colors = if (source == option) {
+                                AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                            } else {
+                                AssistChipDefaults.assistChipColors()
+                            }
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    sources.drop(3).forEach { option ->
+                        AssistChip(
+                            onClick = { source = option },
+                            label = { Text(option) },
+                            colors = if (source == option) {
+                                AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                            } else {
+                                AssistChipDefaults.assistChipColors()
+                            }
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = summary,
+                    onValueChange = { summary = it },
+                    label = { Text("Summary") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3
+                )
+                if (!error.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(error!!, color = MaterialTheme.colorScheme.error)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(onClick = {
+                    error = when {
+                        date == null -> "Select a date."
+                        source.isBlank() -> "Select a source."
+                        summary.isBlank() -> "Add a short summary."
+                        else -> null
+                    }
+                    if (error == null) {
+                        onAdd(
+                            FeedbackUpsertRequest(
+                                localDateToDate(date!!),
+                                source,
+                                summary.trim()
+                            )
+                        )
+                        date = null
+                        source = ""
+                        summary = ""
+                    }
+                }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Add feedback")
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Feedback entries", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(12.dp))
+        entries.sortedByDescending { parseLocalDate(it.date) ?: LocalDate.MIN }.forEach { entry ->
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                modifier = Modifier.padding(bottom = 10.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(entry.source, style = MaterialTheme.typography.bodyMedium)
+                    Text(formatDate(entry.date), style = MaterialTheme.typography.bodySmall)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(entry.summary, style = MaterialTheme.typography.bodySmall)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (entry.evidenceFileName != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(entry.evidenceFileName, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                entry.evidenceUploadedAt?.let { Text("Uploaded ${formatDate(it)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            }
+                            OutlinedButton(onClick = { onDeleteEvidence(entry.id) }) {
+                                Text("Remove")
+                            }
+                        }
+                    } else {
+                        OutlinedButton(onClick = { onUploadEvidence(entry.id) }) {
+                            Icon(Icons.Outlined.FolderOpen, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Upload evidence")
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                        IconButton(onClick = { onDelete(entry.id) }) {
+                            Icon(Icons.Outlined.Delete, contentDescription = "Delete")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ReflectionScreen(entries: List<ReflectionEntry>, onAdd: (ReflectionUpsertRequest) -> Unit, onDelete: (String) -> Unit) {
+    var date by remember { mutableStateOf<LocalDate?>(null) }
+    var whatHappened by remember { mutableStateOf("") }
+    var whatLearned by remember { mutableStateOf("") }
+    var howChanged by remember { mutableStateOf("") }
+    var selectedThemes by remember { mutableStateOf(setOf<String>()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scrollState = rememberScrollState()
+    val themes = listOf(
+        "Prioritise people",
+        "Practise effectively",
+        "Preserve safety",
+        "Promote professionalism and trust"
+    )
+
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp).verticalScroll(scrollState)) {
+        SummaryCountCard(
+            title = "Reflective accounts",
+            count = entries.size,
+            target = 5,
+            detail = "Link each reflection to the NMC Code themes"
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Add reflection", style = MaterialTheme.typography.titleSmall)
+                DatePickerField(label = "Date", date = date, onDateSelected = { date = it })
+                OutlinedTextField(
+                    value = whatHappened,
+                    onValueChange = { whatHappened = it },
+                    label = { Text("What happened") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+                OutlinedTextField(
+                    value = whatLearned,
+                    onValueChange = { whatLearned = it },
+                    label = { Text("What you learned") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+                OutlinedTextField(
+                    value = howChanged,
+                    onValueChange = { howChanged = it },
+                    label = { Text("How this changed your practice") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("NMC Code themes", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                themes.forEach { theme ->
+                    val selected = theme in selectedThemes
+                    AssistChip(
+                        onClick = {
+                            selectedThemes = if (selected) {
+                                selectedThemes - theme
+                            } else {
+                                selectedThemes + theme
+                            }
+                        },
+                        label = { Text(theme) },
+                        colors = if (selected) {
+                            AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                        } else {
+                            AssistChipDefaults.assistChipColors()
+                        },
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+                if (!error.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(error!!, color = MaterialTheme.colorScheme.error)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(onClick = {
+                    error = when {
+                        date == null -> "Select a date."
+                        whatHappened.isBlank() -> "Describe what happened."
+                        whatLearned.isBlank() -> "Describe what you learned."
+                        howChanged.isBlank() -> "Describe how practice changed."
+                        selectedThemes.isEmpty() -> "Select at least one Code theme."
+                        else -> null
+                    }
+                    if (error == null) {
+                        onAdd(
+                            ReflectionUpsertRequest(
+                                localDateToDate(date!!),
+                                whatHappened.trim(),
+                                whatLearned.trim(),
+                                howChanged.trim(),
+                                selectedThemes.joinToString(", ")
+                            )
+                        )
+                        date = null
+                        whatHappened = ""
+                        whatLearned = ""
+                        howChanged = ""
+                        selectedThemes = emptySet()
+                    }
+                }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Add reflection")
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Reflective accounts", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(12.dp))
+        entries.sortedByDescending { parseLocalDate(it.date) ?: LocalDate.MIN }.forEach { entry ->
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                modifier = Modifier.padding(bottom = 10.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(formatDate(entry.date), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(entry.whatHappened, style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(entry.whatLearned, style = MaterialTheme.typography.bodySmall)
+                    Text(entry.howChanged, style = MaterialTheme.typography.bodySmall)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("Code themes: ${entry.codeThemes}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                        IconButton(onClick = { onDelete(entry.id) }) {
+                            Icon(Icons.Outlined.Delete, contentDescription = "Delete")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DiscussionScreen(discussion: Discussion?, onSave: (DiscussionUpdateRequest) -> Unit) {
+    var reflectiveDate by remember(discussion) { mutableStateOf(parseLocalDate(discussion?.reflectiveDiscussionDate)) }
+    var registrantName by remember(discussion) { mutableStateOf(discussion?.reflectiveRegistrantName ?: "") }
+    var registrantPin by remember(discussion) { mutableStateOf(discussion?.reflectiveRegistrantPin ?: "") }
+    var confirmationDate by remember(discussion) { mutableStateOf(parseLocalDate(discussion?.confirmationDate)) }
+    var confirmerName by remember(discussion) { mutableStateOf(discussion?.confirmerName ?: "") }
+    var confirmerRole by remember(discussion) { mutableStateOf(discussion?.confirmerRole ?: "") }
+
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState())) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Reflective discussion", style = MaterialTheme.typography.titleSmall)
+                DatePickerField(label = "Date", date = reflectiveDate, onDateSelected = { reflectiveDate = it })
+                OutlinedTextField(value = registrantName, onValueChange = { registrantName = it }, label = { Text("Registrant name") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = registrantPin, onValueChange = { registrantPin = it }, label = { Text("Registrant NMC PIN") }, modifier = Modifier.fillMaxWidth())
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Confirmation discussion", style = MaterialTheme.typography.titleSmall)
+                DatePickerField(label = "Date", date = confirmationDate, onDateSelected = { confirmationDate = it })
+                OutlinedTextField(value = confirmerName, onValueChange = { confirmerName = it }, label = { Text("Confirmer name") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = confirmerRole, onValueChange = { confirmerRole = it }, label = { Text("Confirmer role") }, modifier = Modifier.fillMaxWidth())
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = {
+                onSave(
+                    DiscussionUpdateRequest(
+                        reflectiveDate?.let { localDateToDate(it) },
+                        registrantName.ifBlank { null },
+                        registrantPin.ifBlank { null },
+                        confirmationDate?.let { localDateToDate(it) },
+                        confirmerName.ifBlank { null },
+                        confirmerRole.ifBlank { null }
+                    )
+                )
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Save discussion details")
+        }
+    }
+}
+
+@Composable
+fun DeclarationScreen(declaration: Declaration?, onSave: (DeclarationUpdateRequest) -> Unit) {
+    var health by remember(declaration) { mutableStateOf(declaration?.healthAndCharacter ?: false) }
+    var indemnity by remember(declaration) { mutableStateOf(declaration?.indemnity ?: false) }
+
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState())) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Declarations", style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = health, onCheckedChange = { health = it })
+                    Text("Health & character declaration completed")
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = indemnity, onCheckedChange = { indemnity = it })
+                    Text("Professional indemnity confirmed")
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = { onSave(DeclarationUpdateRequest(health, indemnity)) },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Save declarations")
+        }
+    }
+}
+
+@Composable
+fun EvidencePackScreen(isExporting: Boolean, onGenerate: () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState())) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Evidence pack builder", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Generate a structured evidence pack suitable for managers, confirmers, or NMC audit.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(onClick = onGenerate, modifier = Modifier.fillMaxWidth(), enabled = !isExporting) {
+                    Text(if (isExporting) "Generating..." else "Generate evidence pack")
+                }
+                if (isExporting) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
             }
         }
@@ -1476,6 +2780,10 @@ fun parseLocalDate(value: String?): LocalDate? {
 
 fun formatLocalDate(value: LocalDate): String {
     return DateTimeFormatter.ofPattern("d MMM yyyy").format(value)
+}
+
+fun localDateToDate(value: LocalDate): Date {
+    return Date.from(value.atStartOfDay(ZoneOffset.UTC).toInstant())
 }
 
 fun parseInstant(value: String): Instant {
