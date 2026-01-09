@@ -1930,42 +1930,42 @@ fun RevalidationDashboardScreen(
             subtitle = "Log shifts and total hours",
             trailing = "${practiceHours.sumOf { it.hours }.toInt()}h",
             onClick = { onNavigate(RevalidationScreen.PracticeHours) },
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
         )
         ModuleNavCard(
             title = "CPD log",
             subtitle = "Structured learning and evidence",
             trailing = "${cpdEntries.size} entries",
             onClick = { onNavigate(RevalidationScreen.CpdLog) },
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
         )
         ModuleNavCard(
             title = "Practice feedback",
             subtitle = "Compliments, audits, peer feedback",
             trailing = "${feedbackEntries.size} items",
             onClick = { onNavigate(RevalidationScreen.Feedback) },
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
         )
         ModuleNavCard(
             title = "Reflective accounts",
             subtitle = "Map learning to the NMC Code",
             trailing = "${reflectionEntries.size} entries",
             onClick = { onNavigate(RevalidationScreen.Reflections) },
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
         )
         ModuleNavCard(
             title = "Discussions",
             subtitle = "Reflective & confirmation discussion",
             trailing = "Complete",
             onClick = { onNavigate(RevalidationScreen.Discussions) },
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
         )
         ModuleNavCard(
             title = "Declarations",
             subtitle = "Health & character + indemnity",
             trailing = "Review",
             onClick = { onNavigate(RevalidationScreen.Declarations) },
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
         )
         Spacer(modifier = Modifier.height(24.dp))
     }
