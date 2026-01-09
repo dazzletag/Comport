@@ -12,6 +12,12 @@ public sealed class AppDbContext : DbContext
     public DbSet<Competency> Competencies => Set<Competency>();
     public DbSet<Evidence> Evidence => Set<Evidence>();
     public DbSet<NurseProfile> NurseProfiles => Set<NurseProfile>();
+    public DbSet<RevalidationPracticeHour> RevalidationPracticeHours => Set<RevalidationPracticeHour>();
+    public DbSet<RevalidationCpdEntry> RevalidationCpdEntries => Set<RevalidationCpdEntry>();
+    public DbSet<RevalidationFeedback> RevalidationFeedbackEntries => Set<RevalidationFeedback>();
+    public DbSet<RevalidationReflection> RevalidationReflections => Set<RevalidationReflection>();
+    public DbSet<RevalidationDiscussion> RevalidationDiscussions => Set<RevalidationDiscussion>();
+    public DbSet<RevalidationDeclaration> RevalidationDeclarations => Set<RevalidationDeclaration>();
     public DbSet<SharePack> SharePacks => Set<SharePack>();
     public DbSet<SharePackItem> SharePackItems => Set<SharePackItem>();
 
@@ -31,6 +37,12 @@ public sealed class AppDbContext : DbContext
             .HasForeignKey(x => x.CompetencyId);
 
         modelBuilder.Entity<NurseProfile>()
+            .HasKey(x => x.UserId);
+
+        modelBuilder.Entity<RevalidationDiscussion>()
+            .HasKey(x => x.UserId);
+
+        modelBuilder.Entity<RevalidationDeclaration>()
             .HasKey(x => x.UserId);
     }
 }

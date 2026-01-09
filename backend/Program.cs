@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Backend.Data;
@@ -121,7 +122,13 @@ app.MapGet("/profile", async (AppDbContext db, ClaimsPrincipal user) =>
         profile.RoleBand,
         profile.Email,
         profile.Phone,
-        profile.Bio));
+        profile.Bio,
+        profile.PinExpiryDate,
+        profile.RevalidationCycleStart,
+        profile.RevalidationCycleEnd,
+        profile.PushNotificationsEnabled,
+        profile.EmailRemindersEnabled,
+        profile.ReminderCadence));
 }).RequireAuthorization();
 
 app.MapPut("/profile", async (AppDbContext db, ClaimsPrincipal user, NurseProfileUpdateRequest request) =>
@@ -147,6 +154,17 @@ app.MapPut("/profile", async (AppDbContext db, ClaimsPrincipal user, NurseProfil
         return Results.BadRequest(new { message = "Registration type must be RN Adult, RN Mental Health, RN Learning Disability, or RN Child." });
     }
 
+    if (request.RevalidationCycleStart.HasValue && request.RevalidationCycleEnd.HasValue
+        && request.RevalidationCycleEnd.Value < request.RevalidationCycleStart.Value)
+    {
+        return Results.BadRequest(new { message = "Revalidation cycle end must be after start date." });
+    }
+
+    if (!IsValidReminderCadence(request.ReminderCadence))
+    {
+        return Results.BadRequest(new { message = "Reminder cadence must be Quarterly, Monthly, or 90/60/30 days." });
+    }
+
     if (profile is null)
     {
         profile = new NurseProfile { UserId = userId };
@@ -161,6 +179,12 @@ app.MapPut("/profile", async (AppDbContext db, ClaimsPrincipal user, NurseProfil
     profile.RoleBand = string.IsNullOrWhiteSpace(request.RoleBand) ? null : request.RoleBand.Trim();
     profile.Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim();
     profile.Bio = string.IsNullOrWhiteSpace(request.Bio) ? null : request.Bio.Trim();
+    profile.PinExpiryDate = request.PinExpiryDate;
+    profile.RevalidationCycleStart = request.RevalidationCycleStart;
+    profile.RevalidationCycleEnd = request.RevalidationCycleEnd;
+    profile.PushNotificationsEnabled = request.PushNotificationsEnabled;
+    profile.EmailRemindersEnabled = request.EmailRemindersEnabled;
+    profile.ReminderCadence = string.IsNullOrWhiteSpace(request.ReminderCadence) ? null : request.ReminderCadence.Trim();
     profile.Email = email;
     profile.UpdatedAt = DateTime.UtcNow;
 
@@ -175,9 +199,661 @@ app.MapPut("/profile", async (AppDbContext db, ClaimsPrincipal user, NurseProfil
         profile.RoleBand,
         profile.Email,
         profile.Phone,
-        profile.Bio));
+        profile.Bio,
+        profile.PinExpiryDate,
+        profile.RevalidationCycleStart,
+        profile.RevalidationCycleEnd,
+        profile.PushNotificationsEnabled,
+        profile.EmailRemindersEnabled,
+        profile.ReminderCadence));
 }).RequireAuthorization();
 
+app.MapGet("/revalidation/summary", async (AppDbContext db, ClaimsPrincipal user) =>
+{
+    var userId = GetUserId(user);
+    var profile = await db.NurseProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId);
+
+    var practiceHours = await db.RevalidationPracticeHours
+        .AsNoTracking()
+        .Where(x => x.UserId == userId)
+        .SumAsync(x => (decimal?)x.Hours) ?? 0m;
+
+    var cpdTotal = await db.RevalidationCpdEntries
+        .AsNoTracking()
+        .Where(x => x.UserId == userId)
+        .SumAsync(x => (decimal?)x.Hours) ?? 0m;
+
+    var cpdParticipatory = await db.RevalidationCpdEntries
+        .AsNoTracking()
+        .Where(x => x.UserId == userId && x.IsParticipatory)
+        .SumAsync(x => (decimal?)x.Hours) ?? 0m;
+
+    var feedbackCount = await db.RevalidationFeedbackEntries
+        .AsNoTracking()
+        .CountAsync(x => x.UserId == userId);
+
+    var reflectionCount = await db.RevalidationReflections
+        .AsNoTracking()
+        .CountAsync(x => x.UserId == userId);
+
+    var atRisk = practiceHours < 300m || cpdTotal < 25m || cpdParticipatory < 15m || feedbackCount < 3 || reflectionCount < 3;
+
+    return Results.Ok(new RevalidationSummaryDto(
+        profile?.PinExpiryDate,
+        profile?.RevalidationCycleStart,
+        profile?.RevalidationCycleEnd,
+        practiceHours,
+        450m,
+        cpdTotal,
+        cpdParticipatory,
+        35m,
+        20m,
+        feedbackCount,
+        5,
+        reflectionCount,
+        5,
+        atRisk));
+}).RequireAuthorization();
+
+app.MapGet("/revalidation/practice-hours", async (AppDbContext db, ClaimsPrincipal user) =>
+{
+    var userId = GetUserId(user);
+    var entries = await db.RevalidationPracticeHours
+        .AsNoTracking()
+        .Where(x => x.UserId == userId)
+        .OrderByDescending(x => x.Date)
+        .Select(x => new PracticeHourDto(x.Id, x.Date, x.Role, x.Setting, x.Hours, x.Notes))
+        .ToListAsync();
+
+    return Results.Ok(entries);
+}).RequireAuthorization();
+
+app.MapPost("/revalidation/practice-hours", async (AppDbContext db, ClaimsPrincipal user, PracticeHourUpsertRequest request) =>
+{
+    var userId = GetUserId(user);
+    if (request.Hours <= 0)
+    {
+        return Results.BadRequest(new { message = "Hours must be greater than zero." });
+    }
+
+    var entry = new RevalidationPracticeHour
+    {
+        Id = Guid.NewGuid(),
+        UserId = userId,
+        Date = request.Date,
+        Role = request.Role?.Trim(),
+        Setting = request.Setting?.Trim(),
+        Hours = request.Hours,
+        Notes = request.Notes?.Trim(),
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow
+    };
+
+    db.RevalidationPracticeHours.Add(entry);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/revalidation/practice-hours/{entry.Id}", new PracticeHourDto(entry.Id, entry.Date, entry.Role, entry.Setting, entry.Hours, entry.Notes));
+}).RequireAuthorization();
+
+app.MapPut("/revalidation/practice-hours/{id:guid}", async (AppDbContext db, ClaimsPrincipal user, Guid id, PracticeHourUpsertRequest request) =>
+{
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationPracticeHours.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
+    if (entry is null)
+    {
+        return Results.NotFound();
+    }
+
+    if (request.Hours <= 0)
+    {
+        return Results.BadRequest(new { message = "Hours must be greater than zero." });
+    }
+
+    entry.Date = request.Date;
+    entry.Role = request.Role?.Trim();
+    entry.Setting = request.Setting?.Trim();
+    entry.Hours = request.Hours;
+    entry.Notes = request.Notes?.Trim();
+    entry.UpdatedAt = DateTime.UtcNow;
+
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization();
+
+app.MapDelete("/revalidation/practice-hours/{id:guid}", async (AppDbContext db, ClaimsPrincipal user, Guid id) =>
+{
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationPracticeHours.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
+    if (entry is null)
+    {
+        return Results.NotFound();
+    }
+
+    db.RevalidationPracticeHours.Remove(entry);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization();
+
+app.MapGet("/revalidation/cpd", async (AppDbContext db, ClaimsPrincipal user) =>
+{
+    var userId = GetUserId(user);
+    var entries = await db.RevalidationCpdEntries
+        .AsNoTracking()
+        .Where(x => x.UserId == userId)
+        .OrderByDescending(x => x.Date)
+        .Select(x => new CpdEntryDto(x.Id, x.Date, x.Topic, x.Hours, x.IsParticipatory, x.EvidenceFileName, x.EvidenceContentType, x.EvidenceSize, x.EvidenceUploadedAt, x.Notes))
+        .ToListAsync();
+
+    return Results.Ok(entries);
+}).RequireAuthorization();
+
+app.MapPost("/revalidation/cpd", async (AppDbContext db, ClaimsPrincipal user, CpdEntryUpsertRequest request) =>
+{
+    var userId = GetUserId(user);
+    if (request.Hours <= 0)
+    {
+        return Results.BadRequest(new { message = "Hours must be greater than zero." });
+    }
+
+    var entry = new RevalidationCpdEntry
+    {
+        Id = Guid.NewGuid(),
+        UserId = userId,
+        Date = request.Date,
+        Topic = request.Topic.Trim(),
+        Hours = request.Hours,
+        IsParticipatory = request.IsParticipatory,
+        Notes = request.Notes?.Trim(),
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow
+    };
+
+    db.RevalidationCpdEntries.Add(entry);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/revalidation/cpd/{entry.Id}", new CpdEntryDto(entry.Id, entry.Date, entry.Topic, entry.Hours, entry.IsParticipatory, null, null, null, null, entry.Notes));
+}).RequireAuthorization();
+
+app.MapPut("/revalidation/cpd/{id:guid}", async (AppDbContext db, ClaimsPrincipal user, Guid id, CpdEntryUpsertRequest request) =>
+{
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationCpdEntries.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
+    if (entry is null)
+    {
+        return Results.NotFound();
+    }
+
+    if (request.Hours <= 0)
+    {
+        return Results.BadRequest(new { message = "Hours must be greater than zero." });
+    }
+
+    entry.Date = request.Date;
+    entry.Topic = request.Topic.Trim();
+    entry.Hours = request.Hours;
+    entry.IsParticipatory = request.IsParticipatory;
+    entry.Notes = request.Notes?.Trim();
+    entry.UpdatedAt = DateTime.UtcNow;
+
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization();
+
+app.MapDelete("/revalidation/cpd/{id:guid}", async (AppDbContext db, BlobStorageService storage, ClaimsPrincipal user, Guid id, CancellationToken cancellationToken) =>
+{
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationCpdEntries.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId, cancellationToken);
+    if (entry is null)
+    {
+        return Results.NotFound();
+    }
+
+    if (!string.IsNullOrWhiteSpace(entry.EvidenceBlobName))
+    {
+        await storage.DeleteAsync(entry.EvidenceBlobName, cancellationToken);
+    }
+
+    db.RevalidationCpdEntries.Remove(entry);
+    await db.SaveChangesAsync(cancellationToken);
+    return Results.NoContent();
+}).RequireAuthorization();
+
+app.MapPost("/revalidation/cpd/{id:guid}/evidence", async (AppDbContext db, BlobStorageService storage, ClaimsPrincipal user, Guid id, HttpRequest request, IConfiguration config, CancellationToken cancellationToken) =>
+{
+    if (!request.HasFormContentType)
+    {
+        return Results.BadRequest(new { message = "Expected multipart form data." });
+    }
+
+    var form = await request.ReadFormAsync(cancellationToken);
+    var file = form.Files.GetFile("file");
+    if (file is null)
+    {
+        return Results.BadRequest(new { message = "Missing file field named 'file'." });
+    }
+
+    var maxBytes = GetEvidenceMaxBytes(config);
+    if (file.Length > maxBytes)
+    {
+        return Results.BadRequest(new { message = $"Evidence file exceeds limit of {maxBytes / (1024 * 1024)} MB." });
+    }
+
+    if (!IsAllowedEvidence(file.ContentType, file.FileName))
+    {
+        return Results.BadRequest(new { message = "Unsupported evidence type. Upload photos or PDF/DOC/DOCX files." });
+    }
+
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationCpdEntries.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId, cancellationToken);
+    if (entry is null)
+    {
+        return Results.NotFound();
+    }
+
+    await storage.EnsureContainerAsync(cancellationToken);
+    var blobName = $"{userId}/revalidation/cpd/{entry.Id}/{Guid.NewGuid()}_{file.FileName}";
+    await using var stream = file.OpenReadStream();
+    await storage.UploadAsync(blobName, stream, file.ContentType, cancellationToken);
+
+    entry.EvidenceBlobName = blobName;
+    entry.EvidenceFileName = file.FileName;
+    entry.EvidenceContentType = file.ContentType;
+    entry.EvidenceSize = file.Length;
+    entry.EvidenceUploadedAt = DateTime.UtcNow;
+    entry.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(new CpdEntryDto(entry.Id, entry.Date, entry.Topic, entry.Hours, entry.IsParticipatory, entry.EvidenceFileName, entry.EvidenceContentType, entry.EvidenceSize, entry.EvidenceUploadedAt, entry.Notes));
+}).RequireAuthorization();
+
+app.MapGet("/revalidation/cpd/{id:guid}/evidence/download", async (AppDbContext db, BlobStorageService storage, ClaimsPrincipal user, Guid id, CancellationToken cancellationToken) =>
+{
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationCpdEntries.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId, cancellationToken);
+    if (entry is null || string.IsNullOrWhiteSpace(entry.EvidenceBlobName))
+    {
+        return Results.NotFound();
+    }
+
+    var stream = await storage.OpenReadAsync(entry.EvidenceBlobName, cancellationToken);
+    return Results.File(stream, entry.EvidenceContentType ?? "application/octet-stream", entry.EvidenceFileName);
+}).RequireAuthorization();
+
+app.MapDelete("/revalidation/cpd/{id:guid}/evidence", async (AppDbContext db, BlobStorageService storage, ClaimsPrincipal user, Guid id, CancellationToken cancellationToken) =>
+{
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationCpdEntries.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId, cancellationToken);
+    if (entry is null || string.IsNullOrWhiteSpace(entry.EvidenceBlobName))
+    {
+        return Results.NotFound();
+    }
+
+    await storage.DeleteAsync(entry.EvidenceBlobName, cancellationToken);
+    entry.EvidenceBlobName = null;
+    entry.EvidenceFileName = null;
+    entry.EvidenceContentType = null;
+    entry.EvidenceSize = null;
+    entry.EvidenceUploadedAt = null;
+    entry.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync(cancellationToken);
+    return Results.NoContent();
+}).RequireAuthorization();
+
+app.MapGet("/revalidation/feedback", async (AppDbContext db, ClaimsPrincipal user) =>
+{
+    var userId = GetUserId(user);
+    var entries = await db.RevalidationFeedbackEntries
+        .AsNoTracking()
+        .Where(x => x.UserId == userId)
+        .OrderByDescending(x => x.Date)
+        .Select(x => new FeedbackDto(x.Id, x.Date, x.Source, x.Summary, x.EvidenceFileName, x.EvidenceContentType, x.EvidenceSize, x.EvidenceUploadedAt))
+        .ToListAsync();
+
+    return Results.Ok(entries);
+}).RequireAuthorization();
+
+app.MapPost("/revalidation/feedback", async (AppDbContext db, ClaimsPrincipal user, FeedbackUpsertRequest request) =>
+{
+    var userId = GetUserId(user);
+    if (string.IsNullOrWhiteSpace(request.Source))
+    {
+        return Results.BadRequest(new { message = "Source is required." });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.Summary))
+    {
+        return Results.BadRequest(new { message = "Summary is required." });
+    }
+
+    var entry = new RevalidationFeedback
+    {
+        Id = Guid.NewGuid(),
+        UserId = userId,
+        Date = request.Date,
+        Source = request.Source.Trim(),
+        Summary = request.Summary.Trim(),
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow
+    };
+
+    db.RevalidationFeedbackEntries.Add(entry);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/revalidation/feedback/{entry.Id}", new FeedbackDto(entry.Id, entry.Date, entry.Source, entry.Summary, null, null, null, null));
+}).RequireAuthorization();
+
+app.MapPut("/revalidation/feedback/{id:guid}", async (AppDbContext db, ClaimsPrincipal user, Guid id, FeedbackUpsertRequest request) =>
+{
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationFeedbackEntries.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
+    if (entry is null)
+    {
+        return Results.NotFound();
+    }
+
+    if (string.IsNullOrWhiteSpace(request.Source) || string.IsNullOrWhiteSpace(request.Summary))
+    {
+        return Results.BadRequest(new { message = "Source and summary are required." });
+    }
+
+    entry.Date = request.Date;
+    entry.Source = request.Source.Trim();
+    entry.Summary = request.Summary.Trim();
+    entry.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+}).RequireAuthorization();
+
+app.MapDelete("/revalidation/feedback/{id:guid}", async (AppDbContext db, BlobStorageService storage, ClaimsPrincipal user, Guid id, CancellationToken cancellationToken) =>
+{
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationFeedbackEntries.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId, cancellationToken);
+    if (entry is null)
+    {
+        return Results.NotFound();
+    }
+
+    if (!string.IsNullOrWhiteSpace(entry.EvidenceBlobName))
+    {
+        await storage.DeleteAsync(entry.EvidenceBlobName, cancellationToken);
+    }
+
+    db.RevalidationFeedbackEntries.Remove(entry);
+    await db.SaveChangesAsync(cancellationToken);
+    return Results.NoContent();
+}).RequireAuthorization();
+
+app.MapPost("/revalidation/feedback/{id:guid}/evidence", async (AppDbContext db, BlobStorageService storage, ClaimsPrincipal user, Guid id, HttpRequest request, IConfiguration config, CancellationToken cancellationToken) =>
+{
+    if (!request.HasFormContentType)
+    {
+        return Results.BadRequest(new { message = "Expected multipart form data." });
+    }
+
+    var form = await request.ReadFormAsync(cancellationToken);
+    var file = form.Files.GetFile("file");
+    if (file is null)
+    {
+        return Results.BadRequest(new { message = "Missing file field named 'file'." });
+    }
+
+    var maxBytes = GetEvidenceMaxBytes(config);
+    if (file.Length > maxBytes)
+    {
+        return Results.BadRequest(new { message = $"Evidence file exceeds limit of {maxBytes / (1024 * 1024)} MB." });
+    }
+
+    if (!IsAllowedEvidence(file.ContentType, file.FileName))
+    {
+        return Results.BadRequest(new { message = "Unsupported evidence type. Upload photos or PDF/DOC/DOCX files." });
+    }
+
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationFeedbackEntries.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId, cancellationToken);
+    if (entry is null)
+    {
+        return Results.NotFound();
+    }
+
+    await storage.EnsureContainerAsync(cancellationToken);
+    var blobName = $"{userId}/revalidation/feedback/{entry.Id}/{Guid.NewGuid()}_{file.FileName}";
+    await using var stream = file.OpenReadStream();
+    await storage.UploadAsync(blobName, stream, file.ContentType, cancellationToken);
+
+    entry.EvidenceBlobName = blobName;
+    entry.EvidenceFileName = file.FileName;
+    entry.EvidenceContentType = file.ContentType;
+    entry.EvidenceSize = file.Length;
+    entry.EvidenceUploadedAt = DateTime.UtcNow;
+    entry.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(new FeedbackDto(entry.Id, entry.Date, entry.Source, entry.Summary, entry.EvidenceFileName, entry.EvidenceContentType, entry.EvidenceSize, entry.EvidenceUploadedAt));
+}).RequireAuthorization();
+
+app.MapGet("/revalidation/feedback/{id:guid}/evidence/download", async (AppDbContext db, BlobStorageService storage, ClaimsPrincipal user, Guid id, CancellationToken cancellationToken) =>
+{
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationFeedbackEntries.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId, cancellationToken);
+    if (entry is null || string.IsNullOrWhiteSpace(entry.EvidenceBlobName))
+    {
+        return Results.NotFound();
+    }
+
+    var stream = await storage.OpenReadAsync(entry.EvidenceBlobName, cancellationToken);
+    return Results.File(stream, entry.EvidenceContentType ?? "application/octet-stream", entry.EvidenceFileName);
+}).RequireAuthorization();
+
+app.MapDelete("/revalidation/feedback/{id:guid}/evidence", async (AppDbContext db, BlobStorageService storage, ClaimsPrincipal user, Guid id, CancellationToken cancellationToken) =>
+{
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationFeedbackEntries.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId, cancellationToken);
+    if (entry is null || string.IsNullOrWhiteSpace(entry.EvidenceBlobName))
+    {
+        return Results.NotFound();
+    }
+
+    await storage.DeleteAsync(entry.EvidenceBlobName, cancellationToken);
+    entry.EvidenceBlobName = null;
+    entry.EvidenceFileName = null;
+    entry.EvidenceContentType = null;
+    entry.EvidenceSize = null;
+    entry.EvidenceUploadedAt = null;
+    entry.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync(cancellationToken);
+    return Results.NoContent();
+}).RequireAuthorization();
+
+app.MapGet("/revalidation/reflections", async (AppDbContext db, ClaimsPrincipal user) =>
+{
+    var userId = GetUserId(user);
+    var entries = await db.RevalidationReflections
+        .AsNoTracking()
+        .Where(x => x.UserId == userId)
+        .OrderByDescending(x => x.Date)
+        .Select(x => new ReflectionDto(x.Id, x.Date, x.WhatHappened, x.WhatLearned, x.HowChanged, x.CodeThemes))
+        .ToListAsync();
+
+    return Results.Ok(entries);
+}).RequireAuthorization();
+
+app.MapPost("/revalidation/reflections", async (AppDbContext db, ClaimsPrincipal user, ReflectionUpsertRequest request) =>
+{
+    var userId = GetUserId(user);
+    if (string.IsNullOrWhiteSpace(request.CodeThemes))
+    {
+        return Results.BadRequest(new { message = "Code themes are required." });
+    }
+
+    var entry = new RevalidationReflection
+    {
+        Id = Guid.NewGuid(),
+        UserId = userId,
+        Date = request.Date,
+        WhatHappened = request.WhatHappened.Trim(),
+        WhatLearned = request.WhatLearned.Trim(),
+        HowChanged = request.HowChanged.Trim(),
+        CodeThemes = request.CodeThemes.Trim(),
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow
+    };
+
+    db.RevalidationReflections.Add(entry);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/revalidation/reflections/{entry.Id}", new ReflectionDto(entry.Id, entry.Date, entry.WhatHappened, entry.WhatLearned, entry.HowChanged, entry.CodeThemes));
+}).RequireAuthorization();
+
+app.MapPut("/revalidation/reflections/{id:guid}", async (AppDbContext db, ClaimsPrincipal user, Guid id, ReflectionUpsertRequest request) =>
+{
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationReflections.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
+    if (entry is null)
+    {
+        return Results.NotFound();
+    }
+
+    entry.Date = request.Date;
+    entry.WhatHappened = request.WhatHappened.Trim();
+    entry.WhatLearned = request.WhatLearned.Trim();
+    entry.HowChanged = request.HowChanged.Trim();
+    entry.CodeThemes = request.CodeThemes.Trim();
+    entry.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+}).RequireAuthorization();
+
+app.MapDelete("/revalidation/reflections/{id:guid}", async (AppDbContext db, ClaimsPrincipal user, Guid id) =>
+{
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationReflections.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
+    if (entry is null)
+    {
+        return Results.NotFound();
+    }
+
+    db.RevalidationReflections.Remove(entry);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization();
+
+app.MapGet("/revalidation/discussions", async (AppDbContext db, ClaimsPrincipal user) =>
+{
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationDiscussions.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == userId);
+    entry ??= new RevalidationDiscussion { UserId = userId, UpdatedAt = DateTime.UtcNow };
+    return Results.Ok(new DiscussionDto(entry.ReflectiveDiscussionDate, entry.ReflectiveRegistrantName, entry.ReflectiveRegistrantPin, entry.ConfirmationDate, entry.ConfirmerName, entry.ConfirmerRole));
+}).RequireAuthorization();
+
+app.MapPut("/revalidation/discussions", async (AppDbContext db, ClaimsPrincipal user, DiscussionUpdateRequest request) =>
+{
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationDiscussions.FirstOrDefaultAsync(x => x.UserId == userId);
+    if (entry is null)
+    {
+        entry = new RevalidationDiscussion { UserId = userId };
+        db.RevalidationDiscussions.Add(entry);
+    }
+
+    entry.ReflectiveDiscussionDate = request.ReflectiveDiscussionDate;
+    entry.ReflectiveRegistrantName = request.ReflectiveRegistrantName?.Trim();
+    entry.ReflectiveRegistrantPin = NormalizeNmcPin(request.ReflectiveRegistrantPin);
+    entry.ConfirmationDate = request.ConfirmationDate;
+    entry.ConfirmerName = request.ConfirmerName?.Trim();
+    entry.ConfirmerRole = request.ConfirmerRole?.Trim();
+    entry.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new DiscussionDto(entry.ReflectiveDiscussionDate, entry.ReflectiveRegistrantName, entry.ReflectiveRegistrantPin, entry.ConfirmationDate, entry.ConfirmerName, entry.ConfirmerRole));
+}).RequireAuthorization();
+
+app.MapGet("/revalidation/declarations", async (AppDbContext db, ClaimsPrincipal user) =>
+{
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationDeclarations.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == userId);
+    entry ??= new RevalidationDeclaration { UserId = userId, UpdatedAt = DateTime.UtcNow };
+    return Results.Ok(new DeclarationDto(entry.HealthAndCharacter, entry.Indemnity));
+}).RequireAuthorization();
+
+app.MapPut("/revalidation/declarations", async (AppDbContext db, ClaimsPrincipal user, DeclarationUpdateRequest request) =>
+{
+    var userId = GetUserId(user);
+    var entry = await db.RevalidationDeclarations.FirstOrDefaultAsync(x => x.UserId == userId);
+    if (entry is null)
+    {
+        entry = new RevalidationDeclaration { UserId = userId };
+        db.RevalidationDeclarations.Add(entry);
+    }
+
+    entry.HealthAndCharacter = request.HealthAndCharacter;
+    entry.Indemnity = request.Indemnity;
+    entry.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new DeclarationDto(entry.HealthAndCharacter, entry.Indemnity));
+}).RequireAuthorization();
+
+app.MapGet("/revalidation/export", async (AppDbContext db, BlobStorageService storage, ClaimsPrincipal user, CancellationToken cancellationToken) =>
+{
+    var userId = GetUserId(user);
+    var profile = await db.NurseProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId, cancellationToken);
+
+    var practiceHours = await db.RevalidationPracticeHours.AsNoTracking().Where(x => x.UserId == userId).ToListAsync(cancellationToken);
+    var cpdEntries = await db.RevalidationCpdEntries.AsNoTracking().Where(x => x.UserId == userId).ToListAsync(cancellationToken);
+    var feedbackEntries = await db.RevalidationFeedbackEntries.AsNoTracking().Where(x => x.UserId == userId).ToListAsync(cancellationToken);
+    var reflections = await db.RevalidationReflections.AsNoTracking().Where(x => x.UserId == userId).ToListAsync(cancellationToken);
+    var discussions = await db.RevalidationDiscussions.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+    var declarations = await db.RevalidationDeclarations.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+
+    using var memory = new MemoryStream();
+    using (var archive = new ZipArchive(memory, ZipArchiveMode.Create, true))
+    {
+        var summary = new
+        {
+            profile?.FullName,
+            profile?.NmcPin,
+            profile?.PinExpiryDate,
+            profile?.RevalidationCycleStart,
+            profile?.RevalidationCycleEnd,
+            PracticeHours = practiceHours.OrderBy(x => x.Date),
+            Cpd = cpdEntries.OrderBy(x => x.Date),
+            Feedback = feedbackEntries.OrderBy(x => x.Date),
+            Reflections = reflections.OrderBy(x => x.Date),
+            Discussions = discussions,
+            Declarations = declarations
+        };
+
+        var summaryEntry = archive.CreateEntry("summary.json");
+        await using (var entryStream = summaryEntry.Open())
+        {
+            await System.Text.Json.JsonSerializer.SerializeAsync(entryStream, summary, cancellationToken: cancellationToken);
+        }
+
+        foreach (var cpd in cpdEntries.Where(x => !string.IsNullOrWhiteSpace(x.EvidenceBlobName)))
+        {
+            var entryName = $"cpd/{cpd.Id}_{cpd.EvidenceFileName}";
+            var zipEntry = archive.CreateEntry(entryName);
+            await using var stream = await storage.OpenReadAsync(cpd.EvidenceBlobName!, cancellationToken);
+            await using var zipStream = zipEntry.Open();
+            await stream.CopyToAsync(zipStream, cancellationToken);
+        }
+
+        foreach (var feedback in feedbackEntries.Where(x => !string.IsNullOrWhiteSpace(x.EvidenceBlobName)))
+        {
+            var entryName = $"feedback/{feedback.Id}_{feedback.EvidenceFileName}";
+            var zipEntry = archive.CreateEntry(entryName);
+            await using var stream = await storage.OpenReadAsync(feedback.EvidenceBlobName!, cancellationToken);
+            await using var zipStream = zipEntry.Open();
+            await stream.CopyToAsync(zipStream, cancellationToken);
+        }
+    }
+
+    memory.Position = 0;
+    var fileName = $"revalidation_pack_{DateTime.UtcNow:yyyyMMdd}.zip";
+    return Results.File(memory, "application/zip", fileName);
+}).RequireAuthorization();
 app.MapGet("/competencies", async (AppDbContext db, ClaimsPrincipal user) =>
 {
     var userId = GetUserId(user);
@@ -644,6 +1320,18 @@ static bool IsValidRegistrationType(string? registrationType)
         || registrationType.Equals("RN Mental Health", StringComparison.OrdinalIgnoreCase)
         || registrationType.Equals("RN Learning Disability", StringComparison.OrdinalIgnoreCase)
         || registrationType.Equals("RN Child", StringComparison.OrdinalIgnoreCase);
+}
+
+static bool IsValidReminderCadence(string? cadence)
+{
+    if (string.IsNullOrWhiteSpace(cadence))
+    {
+        return true;
+    }
+
+    return cadence.Equals("Quarterly", StringComparison.OrdinalIgnoreCase)
+        || cadence.Equals("Monthly", StringComparison.OrdinalIgnoreCase)
+        || cadence.Equals("90/60/30 days", StringComparison.OrdinalIgnoreCase);
 }
 
 static string? NormalizeNmcPin(string? nmcPin)

@@ -1709,6 +1709,86 @@ interface ApiService {
 
     @PUT("profile")
     suspend fun updateProfile(@Body request: NurseProfileUpdateRequest): NurseProfile
+
+    @GET("revalidation/summary")
+    suspend fun getRevalidationSummary(): RevalidationSummary
+
+    @GET("revalidation/practice-hours")
+    suspend fun getPracticeHours(): List<PracticeHour>
+
+    @POST("revalidation/practice-hours")
+    suspend fun createPracticeHour(@Body request: PracticeHourUpsertRequest): PracticeHour
+
+    @PUT("revalidation/practice-hours/{id}")
+    suspend fun updatePracticeHour(@Path("id") id: String, @Body request: PracticeHourUpsertRequest)
+
+    @DELETE("revalidation/practice-hours/{id}")
+    suspend fun deletePracticeHour(@Path("id") id: String)
+
+    @GET("revalidation/cpd")
+    suspend fun getCpdEntries(): List<CpdEntry>
+
+    @POST("revalidation/cpd")
+    suspend fun createCpdEntry(@Body request: CpdEntryUpsertRequest): CpdEntry
+
+    @PUT("revalidation/cpd/{id}")
+    suspend fun updateCpdEntry(@Path("id") id: String, @Body request: CpdEntryUpsertRequest)
+
+    @DELETE("revalidation/cpd/{id}")
+    suspend fun deleteCpdEntry(@Path("id") id: String)
+
+    @Multipart
+    @POST("revalidation/cpd/{id}/evidence")
+    suspend fun uploadCpdEvidence(@Path("id") id: String, @Part file: MultipartBody.Part): CpdEntry
+
+    @DELETE("revalidation/cpd/{id}/evidence")
+    suspend fun deleteCpdEvidence(@Path("id") id: String)
+
+    @GET("revalidation/feedback")
+    suspend fun getFeedbackEntries(): List<FeedbackEntry>
+
+    @POST("revalidation/feedback")
+    suspend fun createFeedback(@Body request: FeedbackUpsertRequest): FeedbackEntry
+
+    @PUT("revalidation/feedback/{id}")
+    suspend fun updateFeedback(@Path("id") id: String, @Body request: FeedbackUpsertRequest)
+
+    @DELETE("revalidation/feedback/{id}")
+    suspend fun deleteFeedback(@Path("id") id: String)
+
+    @Multipart
+    @POST("revalidation/feedback/{id}/evidence")
+    suspend fun uploadFeedbackEvidence(@Path("id") id: String, @Part file: MultipartBody.Part): FeedbackEntry
+
+    @DELETE("revalidation/feedback/{id}/evidence")
+    suspend fun deleteFeedbackEvidence(@Path("id") id: String)
+
+    @GET("revalidation/reflections")
+    suspend fun getReflections(): List<ReflectionEntry>
+
+    @POST("revalidation/reflections")
+    suspend fun createReflection(@Body request: ReflectionUpsertRequest): ReflectionEntry
+
+    @PUT("revalidation/reflections/{id}")
+    suspend fun updateReflection(@Path("id") id: String, @Body request: ReflectionUpsertRequest)
+
+    @DELETE("revalidation/reflections/{id}")
+    suspend fun deleteReflection(@Path("id") id: String)
+
+    @GET("revalidation/discussions")
+    suspend fun getDiscussion(): Discussion
+
+    @PUT("revalidation/discussions")
+    suspend fun updateDiscussion(@Body request: DiscussionUpdateRequest): Discussion
+
+    @GET("revalidation/declarations")
+    suspend fun getDeclarations(): Declaration
+
+    @PUT("revalidation/declarations")
+    suspend fun updateDeclarations(@Body request: DeclarationUpdateRequest): Declaration
+
+    @GET("revalidation/export")
+    suspend fun downloadRevalidationPack(): okhttp3.ResponseBody
 }
 
 data class CompetencySummary(
@@ -1771,7 +1851,13 @@ data class NurseProfile(
     val roleBand: String?,
     val email: String?,
     val phone: String?,
-    val bio: String?
+    val bio: String?,
+    val pinExpiryDate: String?,
+    val revalidationCycleStart: String?,
+    val revalidationCycleEnd: String?,
+    val pushNotificationsEnabled: Boolean,
+    val emailRemindersEnabled: Boolean,
+    val reminderCadence: String?
 )
 
 data class NurseProfileUpdateRequest(
@@ -1782,7 +1868,13 @@ data class NurseProfileUpdateRequest(
     val employer: String?,
     val roleBand: String?,
     val phone: String?,
-    val bio: String?
+    val bio: String?,
+    val pinExpiryDate: Date?,
+    val revalidationCycleStart: Date?,
+    val revalidationCycleEnd: Date?,
+    val pushNotificationsEnabled: Boolean,
+    val emailRemindersEnabled: Boolean,
+    val reminderCadence: String?
 )
 
 data class QuickLink(
@@ -1794,6 +1886,123 @@ data class QuickLink(
 data class PendingEvidence(
     val uri: Uri,
     val note: String?
+)
+
+data class RevalidationSummary(
+    val pinExpiryDate: String?,
+    val cycleStart: String?,
+    val cycleEnd: String?,
+    val practiceHoursTotal: Double,
+    val practiceHoursTarget: Double,
+    val cpdTotal: Double,
+    val cpdParticipatoryTotal: Double,
+    val cpdTarget: Double,
+    val cpdParticipatoryTarget: Double,
+    val feedbackCount: Int,
+    val feedbackTarget: Int,
+    val reflectionCount: Int,
+    val reflectionTarget: Int,
+    val atRisk: Boolean
+)
+
+data class PracticeHour(
+    val id: String,
+    val date: String,
+    val role: String?,
+    val setting: String?,
+    val hours: Double,
+    val notes: String?
+)
+
+data class PracticeHourUpsertRequest(
+    val date: Date,
+    val role: String?,
+    val setting: String?,
+    val hours: Double,
+    val notes: String?
+)
+
+data class CpdEntry(
+    val id: String,
+    val date: String,
+    val topic: String,
+    val hours: Double,
+    val isParticipatory: Boolean,
+    val evidenceFileName: String?,
+    val evidenceContentType: String?,
+    val evidenceSize: Long?,
+    val evidenceUploadedAt: String?,
+    val notes: String?
+)
+
+data class CpdEntryUpsertRequest(
+    val date: Date,
+    val topic: String,
+    val hours: Double,
+    val isParticipatory: Boolean,
+    val notes: String?
+)
+
+data class FeedbackEntry(
+    val id: String,
+    val date: String,
+    val source: String,
+    val summary: String,
+    val evidenceFileName: String?,
+    val evidenceContentType: String?,
+    val evidenceSize: Long?,
+    val evidenceUploadedAt: String?
+)
+
+data class FeedbackUpsertRequest(
+    val date: Date,
+    val source: String,
+    val summary: String
+)
+
+data class ReflectionEntry(
+    val id: String,
+    val date: String,
+    val whatHappened: String,
+    val whatLearned: String,
+    val howChanged: String,
+    val codeThemes: String
+)
+
+data class ReflectionUpsertRequest(
+    val date: Date,
+    val whatHappened: String,
+    val whatLearned: String,
+    val howChanged: String,
+    val codeThemes: String
+)
+
+data class Discussion(
+    val reflectiveDiscussionDate: String?,
+    val reflectiveRegistrantName: String?,
+    val reflectiveRegistrantPin: String?,
+    val confirmationDate: String?,
+    val confirmerName: String?,
+    val confirmerRole: String?
+)
+
+data class DiscussionUpdateRequest(
+    val reflectiveDiscussionDate: Date?,
+    val reflectiveRegistrantName: String?,
+    val reflectiveRegistrantPin: String?,
+    val confirmationDate: Date?,
+    val confirmerName: String?,
+    val confirmerRole: String?
+)
+
+data class Declaration(
+    val healthAndCharacter: Boolean,
+    val indemnity: Boolean
+)
+
+data class DeclarationUpdateRequest(
+    val healthAndCharacter: Boolean,
+    val indemnity: Boolean
 )
 
 suspend fun createMultipartFromUri(context: Context, uri: Uri): MultipartBody.Part {

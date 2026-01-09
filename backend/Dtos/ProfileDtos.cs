@@ -9,7 +9,13 @@ public sealed record NurseProfileDto(
     string? RoleBand,
     string? Email,
     string? Phone,
-    string? Bio
+    string? Bio,
+    DateTime? PinExpiryDate,
+    DateTime? RevalidationCycleStart,
+    DateTime? RevalidationCycleEnd,
+    bool PushNotificationsEnabled,
+    bool EmailRemindersEnabled,
+    string? ReminderCadence
 );
 
 public sealed record NurseProfileUpdateRequest(
@@ -20,5 +26,11 @@ public sealed record NurseProfileUpdateRequest(
     string? Employer,
     string? RoleBand,
     string? Phone,
-    string? Bio
+    string? Bio,
+    DateTime? PinExpiryDate,
+    DateTime? RevalidationCycleStart,
+    DateTime? RevalidationCycleEnd,
+    bool PushNotificationsEnabled,
+    bool EmailRemindersEnabled,
+    string? ReminderCadence
 );

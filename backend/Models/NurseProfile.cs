@@ -36,5 +36,18 @@ public sealed class NurseProfile
     [MaxLength(500)]
     public string? Bio { get; set; }
 
+    public DateTime? PinExpiryDate { get; set; }
+
+    public DateTime? RevalidationCycleStart { get; set; }
+
+    public DateTime? RevalidationCycleEnd { get; set; }
+
+    public bool PushNotificationsEnabled { get; set; }
+
+    public bool EmailRemindersEnabled { get; set; }
+
+    [MaxLength(40)]
+    public string? ReminderCadence { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 }
