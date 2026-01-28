@@ -2855,6 +2855,7 @@ class TokenStore(context: Context) {
 
     private fun createEncryptedPrefs(context: Context): SharedPreferences {
         val prefsName = "competencypassport_prefs"
+        val masterKeyAlias = MasterKey.DEFAULT_MASTER_KEY_ALIAS
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
@@ -2876,8 +2877,8 @@ class TokenStore(context: Context) {
             try {
                 val keyStore = KeyStore.getInstance("AndroidKeyStore")
                 keyStore.load(null)
-                if (keyStore.containsAlias(masterKey.keyAlias)) {
-                    keyStore.deleteEntry(masterKey.keyAlias)
+                if (keyStore.containsAlias(masterKeyAlias)) {
+                    keyStore.deleteEntry(masterKeyAlias)
                 }
             } catch (keyEx: Exception) {
                 Log.w("TokenStore", "Failed to delete master key during recovery.", keyEx)
