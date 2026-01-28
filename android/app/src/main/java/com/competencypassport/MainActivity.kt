@@ -7,6 +7,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
@@ -101,6 +102,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import java.security.KeyStore
 import com.microsoft.identity.client.AuthenticationCallback
 import com.microsoft.identity.client.IAccount
 import com.microsoft.identity.client.IAuthenticationResult
@@ -2849,13 +2851,46 @@ fun logTokenDetails(tag: String, token: String?) {
 }
 
 class TokenStore(context: Context) {
-    private val prefs = EncryptedSharedPreferences.create(
-        context,
-        "competencypassport_prefs",
-        MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    private val prefs = createEncryptedPrefs(context)
+
+    private fun createEncryptedPrefs(context: Context): SharedPreferences {
+        val prefsName = "competencypassport_prefs"
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        return try {
+            EncryptedSharedPreferences.create(
+                context,
+                prefsName,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (ex: Exception) {
+            Log.w("TokenStore", "EncryptedSharedPreferences failed, resetting keyset.", ex)
+            try {
+                context.deleteSharedPreferences(prefsName)
+            } catch (deleteEx: Exception) {
+                Log.w("TokenStore", "Failed to delete prefs during recovery.", deleteEx)
+            }
+            try {
+                val keyStore = KeyStore.getInstance("AndroidKeyStore")
+                keyStore.load(null)
+                if (keyStore.containsAlias(masterKey.alias)) {
+                    keyStore.deleteEntry(masterKey.alias)
+                }
+            } catch (keyEx: Exception) {
+                Log.w("TokenStore", "Failed to delete master key during recovery.", keyEx)
+            }
+            EncryptedSharedPreferences.create(
+                context,
+                prefsName,
+                MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }
+    }
 
     var accessToken: String? = prefs.getString("access_token", null)
         private set
