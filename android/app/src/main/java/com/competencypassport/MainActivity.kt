@@ -2940,16 +2940,53 @@ class MsalAuthManager(private val context: Context) {
             callback.onError(MsalClientException("app_not_ready", message))
             return
         }
-        currentApp.signIn(activity, null, scopes, object : AuthenticationCallback {
-            override fun onSuccess(authenticationResult: IAuthenticationResult) {
-                callback.onSuccess(authenticationResult)
+        currentApp.getCurrentAccountAsync(object : ISingleAccountPublicClientApplication.CurrentAccountCallback {
+            override fun onAccountLoaded(activeAccount: IAccount?) {
+                if (activeAccount == null) {
+                    currentApp.signIn(activity, null, scopes, object : AuthenticationCallback {
+                        override fun onSuccess(authenticationResult: IAuthenticationResult) {
+                            callback.onSuccess(authenticationResult)
+                        }
+
+                        override fun onError(exception: MsalException) {
+                            callback.onError(exception)
+                        }
+
+                        override fun onCancel() {
+                        }
+                    })
+                    return
+                }
+                currentApp.acquireToken(activity, scopes, object : AuthenticationCallback {
+                    override fun onSuccess(authenticationResult: IAuthenticationResult) {
+                        callback.onSuccess(authenticationResult)
+                    }
+
+                    override fun onError(exception: MsalException) {
+                        callback.onError(exception)
+                    }
+
+                    override fun onCancel() {
+                    }
+                })
+            }
+
+            override fun onAccountChanged(priorAccount: IAccount?, currentAccount: IAccount?) {
             }
 
             override fun onError(exception: MsalException) {
-                callback.onError(exception)
-            }
+                currentApp.signIn(activity, null, scopes, object : AuthenticationCallback {
+                    override fun onSuccess(authenticationResult: IAuthenticationResult) {
+                        callback.onSuccess(authenticationResult)
+                    }
 
-            override fun onCancel() {
+                    override fun onError(exception: MsalException) {
+                        callback.onError(exception)
+                    }
+
+                    override fun onCancel() {
+                    }
+                })
             }
         })
     }
