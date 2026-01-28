@@ -2876,8 +2876,8 @@ class TokenStore(context: Context) {
             try {
                 val keyStore = KeyStore.getInstance("AndroidKeyStore")
                 keyStore.load(null)
-                if (keyStore.containsAlias(masterKey.alias)) {
-                    keyStore.deleteEntry(masterKey.alias)
+                if (keyStore.containsAlias(masterKey.keyAlias)) {
+                    keyStore.deleteEntry(masterKey.keyAlias)
                 }
             } catch (keyEx: Exception) {
                 Log.w("TokenStore", "Failed to delete master key during recovery.", keyEx)
